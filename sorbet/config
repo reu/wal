@@ -1,0 +1,7 @@
+--dir
+.
+--ignore=tmp/
+--ignore=sig/
+--ignore=vendor/
+--suppress-payload-superclass-redefinition-for=Psych::Parser::Mark
+--suppress-payload-superclass-redefinition-for=IRB::ReadlineInputMethod

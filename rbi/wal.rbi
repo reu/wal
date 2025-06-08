@@ -1,0 +1,295 @@
+# typed: strong
+module Wal
+  Event = T.type_alias { T.any(
+      BeginTransactionEvent,
+      CommitTransactionEvent,
+      InsertEvent,
+      UpdateEvent,
+      DeleteEvent,
+    ) }
+  VERSION = "0.0.0"
+
+  class BeginTransactionEvent < T::Struct
+    prop :transaction_id, Integer, immutable: true
+    prop :lsn, Integer, immutable: true
+    prop :final_lsn, Integer, immutable: true
+    prop :timestamp, Time, immutable: true
+
+    extend T::Sig
+
+    sig { returns(Integer) }
+    def estimated_size; end
+  end
+
+  class CommitTransactionEvent < T::Struct
+    prop :transaction_id, Integer, immutable: true
+    prop :lsn, Integer, immutable: true
+    prop :context, T::Hash[String, T.untyped], immutable: true
+    prop :timestamp, Time, immutable: true
+
+  end
+
+  module DiffedEvent
+    extend T::Sig
+
+    sig { returns(T::Hash[String, [T.untyped, T.untyped]]) }
+    def diff; end
+
+    sig { params(attribute: T.any(Symbol, String)).returns(T::Boolean) }
+    def changed_attribute?(attribute); end
+
+    sig { params(attribute: T.any(Symbol, String)).returns(T.untyped) }
+    def attribute(attribute); end
+
+    sig { params(attribute: T.any(Symbol, String)).returns(T.nilable([T.untyped, T.untyped])) }
+    def attribute_changes(attribute); end
+
+    sig { params(attribute: T.any(Symbol, String)).returns(T.untyped) }
+    def attribute_was(attribute); end
+  end
+
+  class InsertEvent < T::Struct
+    prop :transaction_id, Integer, immutable: true
+    prop :lsn, Integer, immutable: true
+    prop :context, T::Hash[String, T.untyped], immutable: true
+    prop :table, String, immutable: true
+    prop :primary_key, T.untyped, immutable: true
+    prop :new, T::Hash[String, T.untyped], immutable: true
+
+    include DiffedEvent
+    extend T::Sig
+
+    sig { returns(T::Hash[String, [T.untyped, T.untyped]]) }
+    def diff; end
+  end
+
+  class UpdateEvent < T::Struct
+    prop :transaction_id, Integer, immutable: true
+    prop :lsn, Integer, immutable: true
+    prop :context, T::Hash[String, T.untyped], immutable: true
+    prop :table, String, immutable: true
+    prop :primary_key, T.untyped, immutable: true
+    prop :old, T::Hash[String, T.untyped], immutable: true
+    prop :new, T::Hash[String, T.untyped], immutable: true
+
+    include DiffedEvent
+    extend T::Sig
+
+    sig { returns(T::Hash[String, [T.untyped, T.untyped]]) }
+    def diff; end
+  end
+
+  class DeleteEvent < T::Struct
+    prop :transaction_id, Integer, immutable: true
+    prop :lsn, Integer, immutable: true
+    prop :context, T::Hash[String, T.untyped], immutable: true
+    prop :table, String, immutable: true
+    prop :primary_key, T.untyped, immutable: true
+    prop :old, T::Hash[String, T.untyped], immutable: true
+
+    include DiffedEvent
+    extend T::Sig
+
+    sig { returns(T::Hash[String, [T.untyped, T.untyped]]) }
+    def diff; end
+  end
+
+  module ActiveRecordContextExtension
+    sig { params(context: T.untyped, prefix: T.untyped).returns(T.untyped) }
+    def set_wal_watcher_context(context, prefix: ""); end
+  end
+
+  class NoopWatcher
+    include Wal::Watcher
+    extend T::Sig
+
+    sig { override.params(event: Event).void }
+    def on_event(event); end
+  end
+
+  class RecordWatcher
+    abstract!
+
+    include Wal::Watcher
+    extend T::Sig
+    extend T::Helpers
+    RecordEvent = T.type_alias { T.any(InsertEvent, UpdateEvent, DeleteEvent) }
+
+    sig { params(subclass: T.untyped).returns(T.untyped) }
+    def self.inherited(subclass); end
+
+    sig { params(table: T.any(String, T.class_of(::ActiveRecord::Base)), block: T.proc.bind(T.attached_class).params(event: InsertEvent).void).void }
+    def self.on_insert(table, &block); end
+
+    sig { params(table: T.any(String, T.class_of(::ActiveRecord::Base)), changed: T.nilable(T::Array[T.any(String, Symbol)]), block: T.proc.bind(T.attached_class).params(event: UpdateEvent).void).void }
+    def self.on_update(table, changed: nil, &block); end
+
+    sig { params(table: T.any(String, T.class_of(::ActiveRecord::Base)), changed: T.nilable(T::Array[T.any(String, Symbol)]), block: T.proc.bind(T.attached_class).params(event: T.any(InsertEvent, UpdateEvent)).void).void }
+    def self.on_save(table, changed: nil, &block); end
+
+    sig { params(table: T.any(String, T.class_of(::ActiveRecord::Base)), block: T.proc.bind(T.attached_class).params(event: DeleteEvent).void).void }
+    def self.on_destroy(table, &block); end
+
+    sig { params(event: RecordEvent).void }
+    def on_record_changed(event); end
+
+    sig { params(table: String).returns(T::Boolean) }
+    def should_watch_table?(table); end
+
+    sig { params(event: BeginTransactionEvent).returns(Symbol) }
+    def aggregation_strategy(event); end
+
+    sig { override.params(event: Event).void }
+    def on_event(event); end
+
+    class MemoryRecordWatcher
+      include Wal::Watcher
+      include Wal::Watcher::SeparatedEvents
+      extend T::Sig
+      extend T::Helpers
+      RecordsStorage = T.type_alias { T::Hash[[String, Integer], T.nilable(RecordEvent)] }
+
+      sig { params(watcher: T.untyped).void }
+      def initialize(watcher); end
+
+      sig { params(event: BeginTransactionEvent).void }
+      def on_begin(event); end
+
+      sig { params(_event: T.untyped).returns(T.untyped) }
+      def on_commit(_event); end
+
+      sig { params(event: InsertEvent).void }
+      def on_insert(event); end
+
+      sig { params(event: UpdateEvent).void }
+      def on_update(event); end
+
+      sig { params(event: DeleteEvent).void }
+      def on_delete(event); end
+    end
+
+    class TemporaryTableRecordWatcher
+      include Wal::Watcher
+      include Wal::Watcher::SeparatedEvents
+      extend T::Sig
+      extend T::Helpers
+
+      sig { params(watcher: T.untyped, batch_size: T.untyped).void }
+      def initialize(watcher, batch_size: 5_000); end
+
+      sig { params(event: BeginTransactionEvent).void }
+      def on_begin(event); end
+
+      sig { params(_event: T.untyped).returns(T.untyped) }
+      def on_commit(_event); end
+
+      sig { params(event: InsertEvent).void }
+      def on_insert(event); end
+
+      sig { params(event: UpdateEvent).void }
+      def on_update(event); end
+
+      sig { params(event: DeleteEvent).void }
+      def on_delete(event); end
+
+      sig { returns(T.class_of(::ActiveRecord::Base)) }
+      def base_class; end
+
+      sig { params(event: T.untyped).returns(T.untyped) }
+      def serialize(event); end
+
+      sig { params(persisted_event: T.untyped).returns(T.untyped) }
+      def deserialize(persisted_event); end
+    end
+  end
+
+  class Replicator
+    include PG::Replication::Protocol
+    extend T::Sig
+
+    sig { params(replication_slot: String, use_temporary_slot: T::Boolean, db_config: T::Hash[Symbol, T.untyped]).void }
+    def initialize(replication_slot:, use_temporary_slot: false, db_config: ActiveRecord::Base.configurations.configs_for(name: "primary").configuration_hash); end
+
+    sig { params(watcher: Watcher, publications: T::Array[String]).void }
+    def replicate_forever(watcher, publications:); end
+
+    sig { params(watcher: Watcher, publications: T::Array[String]).returns(T::Enumerator::Lazy[Event]) }
+    def replicate(watcher, publications:); end
+
+    class Column < T::Struct
+      prop :name, String, immutable: true
+      prop :decoder, T.untyped, immutable: true
+
+      sig { params(value: T.untyped).returns(T.untyped) }
+      def decode(value); end
+    end
+
+    class Table < T::Struct
+      prop :name, String, immutable: true
+      prop :primary_key_colums, T::Array[String], immutable: true
+      prop :columns, T::Array[Column], immutable: true
+
+      sig { params(decoded_row: T.untyped).returns(T.untyped) }
+      def primary_key(decoded_row); end
+
+      sig { params(values: T.untyped).returns(T.untyped) }
+      def decode_row(values); end
+    end
+  end
+
+  class StreamingWatcher
+    abstract!
+
+    include Wal::Watcher
+    extend T::Sig
+    extend T::Helpers
+
+    sig { abstract.params(events: T::Enumerator[Event]).void }
+    def on_transaction_events(events); end
+
+    sig { params(event: BeginTransactionEvent).returns(Integer) }
+    def queue_size(event); end
+
+    sig { override.params(event: Event).void }
+    def on_event(event); end
+  end
+
+  module Watcher
+    abstract!
+
+    include Wal
+    extend T::Sig
+    extend T::Helpers
+
+    sig { abstract.params(event: Event).void }
+    def on_event(event); end
+
+    sig { params(table: String).returns(T::Boolean) }
+    def should_watch_table?(table); end
+
+    sig { params(prefix: String).returns(T::Boolean) }
+    def valid_context_prefix?(prefix); end
+
+    module SeparatedEvents
+      extend T::Sig
+
+      sig { params(event: Event).void }
+      def on_event(event); end
+
+      sig { params(event: BeginTransactionEvent).void }
+      def on_begin(event); end
+
+      sig { params(event: InsertEvent).void }
+      def on_insert(event); end
+
+      sig { params(event: UpdateEvent).void }
+      def on_update(event); end
+
+      sig { params(event: DeleteEvent).void }
+      def on_delete(event); end
+
+      sig { params(event: CommitTransactionEvent).void }
+      def on_commit(event); end
+    end
+  end
+end

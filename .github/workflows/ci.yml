@@ -1,0 +1,38 @@
+on: [push, pull_request]
+
+name: Continuous integration
+
+jobs:
+  test:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest]
+        ruby: [3.2, 3.3, 3.4]
+    runs-on: ${{ matrix.os }}
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Download PostgreSQL Ubuntu
+      if: matrix.os == 'ubuntu-latest'
+      run: |
+        echo "deb http://apt.postgresql.org/pub/repos/apt/ $(lsb_release -cs)-pgdg main 17" | sudo tee -a /etc/apt/sources.list.d/pgdg.list
+        wget --quiet -O - https://www.postgresql.org/media/keys/ACCC4CF8.asc | sudo apt-key add -
+        sudo apt-get -y update
+        sudo apt-get -y --allow-downgrades install postgresql-17 libpq5=17* libpq-dev=17*
+        echo /usr/lib/postgresql/17/bin >> $GITHUB_PATH
+
+    - name: Download PostgreSQL Macos
+      if: matrix.os == 'macos-latest'
+      run: |
+        wget https://get.enterprisedb.com/postgresql/postgresql-17.0-1-osx-binaries.zip && \
+        sudo mkdir -p /Library/PostgreSQL && \
+        sudo unzip postgresql-17.0-1-osx-binaries.zip -d /Library/PostgreSQL/17 && \
+        sudo mv /Library/PostgreSQL/17/pgsql/* /Library/PostgreSQL/17/ && \
+        echo /Library/PostgreSQL/17/bin >> $GITHUB_PATH
+
+    - uses: ruby/setup-ruby@v1
+      with:
+        ruby-version: ${{ matrix.ruby }}
+        bundler-cache: true
+    - run: rake test

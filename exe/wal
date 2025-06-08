@@ -1,0 +1,64 @@
+#!/usr/bin/env ruby
+
+require "docopt"
+
+begin
+  cli = Docopt.docopt(<<~DOCOPT)
+    Usage:
+      wal watch --watcher <watcher-class> (--slot <replication-slot> | --tmp-slot) [--publication=<publication>...] [--with-timings]
+      wal start <config-file>
+
+    Options:
+      -h --help                         Show this screen.
+      --watcher=<watcher-class>         The watcher class to be used to listen for WAL changes.
+      --slot=<replication-slot>         The replication slot that will be used.
+      --tmp-slot                        Use a temporary replication slot.
+      [--publication=<publication>...]  Force using the informed Postgres publications.
+      [--with-timings]                  Add timing logs to the output.
+  DOCOPT
+rescue Docopt::Exit => err
+  puts err.message
+  exit
+end
+
+require "./config/environment"
+
+if cli["watch"]
+  watcher = cli["--watcher"].constantize.new
+  watcher = Wal::MonitoringWatcher.new(watcher) if cli["--with-timings"]
+
+  use_temporary_slot = cli["--tmp-slot"] || false
+  replication_slot = cli["--slot"]
+  replication_slot = replication_slot.presence || "wal_watcher_#{SecureRandom.alphanumeric(4)}" if use_temporary_slot
+
+  Wal::Replicator
+    .new(replication_slot:, use_temporary_slot:)
+    .replicate_forever(watcher, publications: cli["--publication"])
+
+elsif cli["start"]
+  workers = YAML.load_file(cli["<config-file>"])["slots"].map do |slot, config|
+    watcher = config["watcher"].constantize.new
+    watcher = Wal::MonitoringWatcher.new(watcher) if config["log_execution_time"]
+    temporary = config["temporary"] || false
+    publications = config["publications"] || []
+
+    Thread.new(slot, watcher, temporary, publications) do |replication_slot, watcher, use_temporary_slot, publications|
+      replication_slot = "#{replication_slot}_#{SecureRandom.alphanumeric(4)}" if use_temporary_slot
+      puts "Watcher started for #{replication_slot} slot (#{publications.join(", ")})"
+
+      Wal::Replicator
+        .new(replication_slot:, use_temporary_slot:)
+        .replicate_forever(watcher, publications:)
+
+      puts "Watcher finished for #{replication_slot}"
+    end
+  end
+
+  Signal.trap("INT") do
+    puts "Stopping WAL workers..."
+    workers.each(&:kill)
+    puts "WAL workers stopped"
+  end
+
+  workers.each(&:join)
+end
