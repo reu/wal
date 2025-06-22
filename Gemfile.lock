@@ -1,7 +1,7 @@
 PATH
   remote: .
   specs:
-    wal (0.0.1)
+    wal (0.0.2)
       activerecord (>= 7)
       docopt
       ostruct
@@ -234,6 +234,7 @@ GEM
     sorbet (0.5.12196)
       sorbet-static (= 0.5.12196)
     sorbet-runtime (0.5.12196)
+    sorbet-static (0.5.12196-universal-darwin)
     sorbet-static (0.5.12196-x86_64-linux)
     sorbet-static-and-runtime (0.5.12196)
       sorbet (= 0.5.12196)
