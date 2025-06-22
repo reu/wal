@@ -44,7 +44,7 @@ module Wal
     const :timestamp, Time
   end
 
-  module DiffedEvent
+  module ChangeEvent
     extend T::Sig
 
     sig { returns(T::Hash[String, [T.untyped, T.untyped]]) }
@@ -79,7 +79,7 @@ module Wal
 
   class InsertEvent < T::Struct
     extend T::Sig
-    include DiffedEvent
+    include ::Wal::ChangeEvent
 
     const :transaction_id, Integer
     const :lsn, Integer
@@ -96,7 +96,7 @@ module Wal
 
   class UpdateEvent < T::Struct
     extend T::Sig
-    include DiffedEvent
+    include ::Wal::ChangeEvent
 
     const :transaction_id, Integer
     const :lsn, Integer
@@ -116,7 +116,7 @@ module Wal
 
   class DeleteEvent < T::Struct
     extend T::Sig
-    include DiffedEvent
+    include ::Wal::ChangeEvent
 
     const :transaction_id, Integer
     const :lsn, Integer

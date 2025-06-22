@@ -13,7 +13,7 @@ end
 class Wal::CommitTransactionEvent < T::Struct
 end
 
-module Wal::DiffedEvent
+module Wal::ChangeEvent
   def diff: () -> ::Hash[String, [ untyped, untyped ]]
 
   def changed_attribute?: (Symbol | String attribute) -> bool
@@ -26,19 +26,19 @@ module Wal::DiffedEvent
 end
 
 class Wal::InsertEvent < T::Struct
-  include DiffedEvent
+  include ::Wal::ChangeEvent
 
   def diff: () -> ::Hash[String, [ untyped, untyped ]]
 end
 
 class Wal::UpdateEvent < T::Struct
-  include DiffedEvent
+  include ::Wal::ChangeEvent
 
   def diff: () -> ::Hash[String, [ untyped, untyped ]]
 end
 
 class Wal::DeleteEvent < T::Struct
-  include DiffedEvent
+  include ::Wal::ChangeEvent
 
   def diff: () -> ::Hash[String, [ untyped, untyped ]]
 end

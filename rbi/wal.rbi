@@ -29,7 +29,7 @@ module Wal
 
   end
 
-  module DiffedEvent
+  module ChangeEvent
     extend T::Sig
 
     sig { returns(T::Hash[String, [T.untyped, T.untyped]]) }
@@ -56,7 +56,7 @@ module Wal
     prop :primary_key, T.untyped, immutable: true
     prop :new, T::Hash[String, T.untyped], immutable: true
 
-    include DiffedEvent
+    include ::Wal::ChangeEvent
     extend T::Sig
 
     sig { returns(T::Hash[String, [T.untyped, T.untyped]]) }
@@ -72,7 +72,7 @@ module Wal
     prop :old, T::Hash[String, T.untyped], immutable: true
     prop :new, T::Hash[String, T.untyped], immutable: true
 
-    include DiffedEvent
+    include ::Wal::ChangeEvent
     extend T::Sig
 
     sig { returns(T::Hash[String, [T.untyped, T.untyped]]) }
@@ -87,7 +87,7 @@ module Wal
     prop :primary_key, T.untyped, immutable: true
     prop :old, T::Hash[String, T.untyped], immutable: true
 
-    include DiffedEvent
+    include ::Wal::ChangeEvent
     extend T::Sig
 
     sig { returns(T::Hash[String, [T.untyped, T.untyped]]) }
