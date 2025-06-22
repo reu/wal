@@ -1,7 +1,7 @@
 PATH
   remote: .
   specs:
-    wal (0.0.0)
+    wal (0.0.1)
       activerecord (>= 7)
       docopt
       ostruct
