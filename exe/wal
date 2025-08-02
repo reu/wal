@@ -25,8 +25,6 @@ require "./config/environment"
 
 if cli["watch"]
   watcher = cli["--watcher"].constantize.new
-  watcher = Wal::MonitoringWatcher.new(watcher) if cli["--with-timings"]
-
   use_temporary_slot = cli["--tmp-slot"] || false
   replication_slot = cli["--slot"]
   replication_slot = replication_slot.presence || "wal_watcher_#{SecureRandom.alphanumeric(4)}" if use_temporary_slot
@@ -38,7 +36,6 @@ if cli["watch"]
 elsif cli["start"]
   workers = YAML.load_file(cli["<config-file>"])["slots"].map do |slot, config|
     watcher = config["watcher"].constantize.new
-    watcher = Wal::MonitoringWatcher.new(watcher) if config["log_execution_time"]
     temporary = config["temporary"] || false
     publications = config["publications"] || []
 
