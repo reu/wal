@@ -1,4 +1,3 @@
-require "rspec/sorbet"
 require "testcontainers/postgres"
 require "debug"
 require "minitest/mock"

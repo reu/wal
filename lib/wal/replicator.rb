@@ -1,21 +1,11 @@
-# typed: false
-
 require "ostruct"
 
 module Wal
   # Responsible to hook into a Postgres logical replication slot and stream the changes to a specific `Watcher`.
   # Also it supports inject "contexts" into the replication events.
   class Replicator
-    extend T::Sig
     include PG::Replication::Protocol
 
-    sig do
-      params(
-        replication_slot: String,
-        use_temporary_slot: T::Boolean,
-        db_config: T::Hash[Symbol, T.untyped],
-      ).void
-    end
     def initialize(
       replication_slot:,
       use_temporary_slot: false,
@@ -26,7 +16,6 @@ module Wal
       @use_temporary_slot = use_temporary_slot
     end
 
-    sig { params(watcher: Watcher, publications: T::Array[String]).void }
     def replicate_forever(watcher, publications:)
       replication = replicate(watcher, publications:)
       loop { replication.next }
@@ -34,7 +23,6 @@ module Wal
       nil
     end
 
-    sig { params(watcher: Watcher, publications: T::Array[String]).returns(T::Enumerator::Lazy[Event]) }
     def replicate(watcher, publications:)
       watch_conn = PG.connect(
         dbname: @db_config[:database],
@@ -162,20 +150,13 @@ module Wal
       end
     end
 
-    class Column < T::Struct
-      const :name, String
-      const :decoder, T.untyped
-
+    class Column < Data.define(:name, :decoder)
       def decode(value)
         decoder.deserialize(value)
       end
     end
 
-    class Table < T::Struct
-      const :name, String
-      const :primary_key_colums, T::Array[String]
-      const :columns, T::Array[Column]
-
+    class Table < Data.define(:name, :primary_key_colums, :columns)
       def primary_key(decoded_row)
         case primary_key_colums
         in [key]

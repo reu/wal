@@ -1,5 +1,3 @@
-# typed: true
-
 module Wal
   # Watcher that process records at the end of a transaction, keeping only its final state.
   #
@@ -39,12 +37,7 @@ module Wal
   # end
   # ```
   class RecordWatcher
-    extend T::Sig
-    extend T::Helpers
     include Wal::Watcher
-    abstract!
-
-    RecordEvent = T.type_alias { T.any(InsertEvent, UpdateEvent, DeleteEvent) }
 
     def self.inherited(subclass)
       super
@@ -52,53 +45,26 @@ module Wal
       @@delete_callbacks = Hash.new { |hash, key| hash[key] = [] }
     end
 
-    sig do
-      params(
-        table: T.any(String, T.class_of(::ActiveRecord::Base)),
-        block: T.proc.bind(T.attached_class).params(event: InsertEvent).void,
-      ).void
-    end
     def self.on_insert(table, &block)
       table = table.is_a?(String) ? table : table.table_name
       @@change_callbacks[table].push(only: [:create], block: block)
     end
 
-    sig do
-      params(
-        table: T.any(String, T.class_of(::ActiveRecord::Base)),
-        changed: T.nilable(T::Array[T.any(String, Symbol)]),
-        block: T.proc.bind(T.attached_class).params(event: UpdateEvent).void,
-      ).void
-    end
     def self.on_update(table, changed: nil, &block)
       table = table.is_a?(String) ? table : table.table_name
       @@change_callbacks[table].push(only: [:update], changed: changed&.map(&:to_s), block: block)
     end
 
-    sig do
-      params(
-        table: T.any(String, T.class_of(::ActiveRecord::Base)),
-        changed: T.nilable(T::Array[T.any(String, Symbol)]),
-        block: T.proc.bind(T.attached_class).params(event: T.any(InsertEvent, UpdateEvent)).void,
-      ).void
-    end
     def self.on_save(table, changed: nil, &block)
       table = table.is_a?(String) ? table : table.table_name
       @@change_callbacks[table].push(only: [:create, :update], changed: changed&.map(&:to_s), block: block)
     end
 
-    sig do
-      params(
-        table: T.any(String, T.class_of(::ActiveRecord::Base)),
-        block: T.proc.bind(T.attached_class).params(event: DeleteEvent).void,
-      ).void
-    end
     def self.on_destroy(table, &block)
       table = table.is_a?(String) ? table : table.table_name
       @@delete_callbacks[table].push(block: block)
     end
 
-    sig { params(event: RecordEvent).void }
     def on_record_changed(event)
       case event
       when InsertEvent
@@ -124,7 +90,6 @@ module Wal
       end
     end
 
-    sig { params(table: String).returns(T::Boolean) }
     def should_watch_table?(table)
       (@@change_callbacks.keys | @@delete_callbacks.keys).include? table
     end
@@ -139,7 +104,6 @@ module Wal
     #
     # These strategies can be defined per transaction, and by default it will uses the memory one, and only fallback
     # to the temporary table if the transaction size is roughly 2 gigabytes or more.
-    sig { params(event: BeginTransactionEvent).returns(Symbol) }
     def aggregation_strategy(event)
       if event.estimated_size > 1024.pow(3) * 2
         :temporary_table
@@ -148,7 +112,6 @@ module Wal
       end
     end
 
-    sig { override.params(event: Event).void }
     def on_event(event)
       if event.is_a? BeginTransactionEvent
         @current_record_watcher = case (strategy = aggregation_strategy(event))
@@ -164,21 +127,15 @@ module Wal
     end
 
     class MemoryRecordWatcher
-      extend T::Sig
-      extend T::Helpers
       include Wal::Watcher
       include Wal::Watcher::SeparatedEvents
-
-      # Records indexed by table and primary key
-      RecordsStorage = T.type_alias { T::Hash[[String, Integer], T.nilable(RecordEvent)] }
 
       def initialize(watcher)
         @watcher = watcher
       end
 
-      sig { params(event: BeginTransactionEvent).void }
       def on_begin(event)
-        @records = T.let({}, T.nilable(RecordsStorage))
+        @records = {}
       end
 
       def on_commit(_event)
@@ -188,7 +145,6 @@ module Wal
           &.each { |event| @watcher.on_record_changed(event) if event }
       end
 
-      sig { params(event: InsertEvent).void }
       def on_insert(event)
         if (id = event.primary_key)
           @records ||= {}
@@ -196,7 +152,6 @@ module Wal
         end
       end
 
-      sig { params(event: UpdateEvent).void }
       def on_update(event)
         if (id = event.primary_key)
           @records ||= {}
@@ -217,7 +172,6 @@ module Wal
         end
       end
 
-      sig { params(event: DeleteEvent).void }
       def on_delete(event)
         if (id = event.primary_key)
           @records ||= {}
@@ -240,8 +194,6 @@ module Wal
     end
 
     class TemporaryTableRecordWatcher
-      extend T::Sig
-      extend T::Helpers
       include Wal::Watcher
       include Wal::Watcher::SeparatedEvents
 
@@ -255,7 +207,6 @@ module Wal
         @batch_size = 5_000
       end
 
-      sig { params(event: BeginTransactionEvent).void }
       def on_begin(event)
         @table = begin
           table_name = "temp_record_watcher_#{SecureRandom.alphanumeric(10).downcase}"
@@ -276,8 +227,7 @@ module Wal
           base_class.connection.add_index table_name, unique_index, unique: true
 
           Class.new(base_class) do
-            # Using cast here since Sorbet bugs when we don't pass a explicit class to `Class.new`
-            T.cast(self, T.class_of(::ActiveRecord::Base)).table_name = table_name
+            self.table_name = table_name
 
             # All this sh$#1t was necessary because AR schema cache doesn't work with temporary tables...
             insert_all_class = Class.new(::ActiveRecord::InsertAll) do
@@ -290,8 +240,8 @@ module Wal
             define_singleton_method(:upsert) do |attributes, update_only: nil|
               insert_all_class
                 .new(
-                  T.cast(self, T.class_of(::ActiveRecord::Base)).none,
-                  T.cast(self, T.class_of(::ActiveRecord::Base)).connection,
+                  none,
+                  connection,
                   [attributes],
                   on_duplicate: :update,
                   unique_by: unique_index,
@@ -316,17 +266,14 @@ module Wal
         base_class.connection.drop_table @table.table_name
       end
 
-      sig { params(event: InsertEvent).void }
       def on_insert(event)
         @table.upsert(serialize(event))
       end
 
-      sig { params(event: UpdateEvent).void }
       def on_update(event)
         @table.upsert(serialize(event), update_only: %w[new])
       end
 
-      sig { params(event: DeleteEvent).void }
       def on_delete(event)
         case @table.where(table_name: event.table, primary_key: event.primary_key).pluck(:action, :old).first
         in ["insert", _]
@@ -342,7 +289,6 @@ module Wal
 
       private
 
-      sig { returns(T.class_of(::ActiveRecord::Base)) }
       def base_class
         self.class.base_active_record_class || ::ActiveRecord::Base
       end

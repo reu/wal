@@ -1,5 +1,3 @@
-# typed: true
-
 module Wal
   # A watcher that streams all the events of each WAL transaction on a separate thread.
   #
@@ -12,7 +10,6 @@ module Wal
   #
   # ```ruby
   # class RegisterDeletesWalWatcher < Wal::StreamingWalWatcher
-  #   sig { override.params(events: T::Enumerator[Event]).void }
   #   def on_transaction_events(events)
   #     DeletedApplicationRecord.transaction do
   #       events
@@ -24,20 +21,14 @@ module Wal
   # end
   # ```
   class StreamingWatcher
-    extend T::Sig
-    extend T::Helpers
     include Wal::Watcher
-    abstract!
 
-    sig { abstract.params(events: T::Enumerator[Event]).void }
     def on_transaction_events(events); end
 
-    sig { params(event: BeginTransactionEvent).returns(Integer) }
     def queue_size(event)
       5_000
     end
 
-    sig { override.params(event: Event).void }
     def on_event(event)
       case event
       when BeginTransactionEvent

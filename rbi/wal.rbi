@@ -141,66 +141,6 @@ module Wal
 
     sig { override.params(event: Event).void }
     def on_event(event); end
-
-    class MemoryRecordWatcher
-      include Wal::Watcher
-      include Wal::Watcher::SeparatedEvents
-      extend T::Sig
-      extend T::Helpers
-      RecordsStorage = T.type_alias { T::Hash[[String, Integer], T.nilable(RecordEvent)] }
-
-      sig { params(watcher: T.untyped).void }
-      def initialize(watcher); end
-
-      sig { params(event: BeginTransactionEvent).void }
-      def on_begin(event); end
-
-      sig { params(_event: T.untyped).returns(T.untyped) }
-      def on_commit(_event); end
-
-      sig { params(event: InsertEvent).void }
-      def on_insert(event); end
-
-      sig { params(event: UpdateEvent).void }
-      def on_update(event); end
-
-      sig { params(event: DeleteEvent).void }
-      def on_delete(event); end
-    end
-
-    class TemporaryTableRecordWatcher
-      include Wal::Watcher
-      include Wal::Watcher::SeparatedEvents
-      extend T::Sig
-      extend T::Helpers
-
-      sig { params(watcher: T.untyped, batch_size: T.untyped).void }
-      def initialize(watcher, batch_size: 5_000); end
-
-      sig { params(event: BeginTransactionEvent).void }
-      def on_begin(event); end
-
-      sig { params(_event: T.untyped).returns(T.untyped) }
-      def on_commit(_event); end
-
-      sig { params(event: InsertEvent).void }
-      def on_insert(event); end
-
-      sig { params(event: UpdateEvent).void }
-      def on_update(event); end
-
-      sig { params(event: DeleteEvent).void }
-      def on_delete(event); end
-
-      sig { returns(T.class_of(::ActiveRecord::Base)) }
-      def base_class; end
-
-      sig { params(event: T.untyped).returns(T.untyped) }
-      def serialize(event); end
-
-      sig { params(persisted_event: T.untyped).returns(T.untyped) }
-      def deserialize(persisted_event); end
-    end
   end
 
   class Replicator
@@ -215,26 +155,6 @@ module Wal
 
     sig { params(watcher: Watcher, publications: T::Array[String]).returns(T::Enumerator::Lazy[Event]) }
     def replicate(watcher, publications:); end
-
-    class Column < T::Struct
-      prop :name, String, immutable: true
-      prop :decoder, T.untyped, immutable: true
-
-      sig { params(value: T.untyped).returns(T.untyped) }
-      def decode(value); end
-    end
-
-    class Table < T::Struct
-      prop :name, String, immutable: true
-      prop :primary_key_colums, T::Array[String], immutable: true
-      prop :columns, T::Array[Column], immutable: true
-
-      sig { params(decoded_row: T.untyped).returns(T.untyped) }
-      def primary_key(decoded_row); end
-
-      sig { params(values: T.untyped).returns(T.untyped) }
-      def decode_row(values); end
-    end
   end
 
   class StreamingWatcher

@@ -33,9 +33,4 @@ Gem::Specification.new do |spec|
   spec.add_dependency "docopt"
   spec.add_dependency "pg-replication-protocol", "~> 0.0.7"
   spec.add_dependency "activerecord", ">= 7"
-
-  spec.add_development_dependency "rbs"
-  spec.add_development_dependency "sorbet"
-  spec.add_development_dependency "tapioca"
-  spec.add_development_dependency "parlour"
 end

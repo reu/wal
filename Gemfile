@@ -13,6 +13,5 @@ group :test do
   gem "rails"
   gem "minitest"
   gem "rspec", "~> 3.0"
-  gem "rspec-sorbet"
   gem "testcontainers-postgres", require: "testcontainers/postgres"
 end
