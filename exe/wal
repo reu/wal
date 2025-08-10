@@ -9,7 +9,6 @@ begin
         (--slot <replication-slot> | --tmp-slot)
         [--publication=<publication>...]
         [--replicator <replicator-class>]
-
       wal start <config-file>
 
     Options:
