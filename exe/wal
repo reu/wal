@@ -33,18 +33,21 @@ if cli["watch"]
   use_temporary_slot = cli["--tmp-slot"] || false
   replication_slot = cli["--slot"]
   replication_slot = replication_slot.presence || "wal_watcher_#{SecureRandom.alphanumeric(4)}" if use_temporary_slot
-  replicator = cli["--replicator"]&.constantize || Wal::Replicator
+  publications = cli["--publication"] || []
+  replicator = cli["--replicator"].presence&.constantize || Wal::Replicator
 
+  puts "Watcher started for #{replication_slot} slot (#{publications.join(", ")})"
   replicator
     .new(replication_slot:, use_temporary_slot:, db_config:)
-    .replicate_forever(watcher, publications: cli["--publication"])
+    .replicate_forever(watcher, publications:)
+  puts "Watcher finished for #{replication_slot}"
 
 elsif cli["start"]
   workers = YAML.load_file(cli["<config-file>"])["slots"].map do |slot, config|
     watcher = config["watcher"].constantize.new
     temporary = config["temporary"] || false
     publications = config["publications"] || []
-    replicator = config["replicator"]&.constantize || Wal::Replicator
+    replicator = config["--replicator"].presence&.constantize || Wal::Replicator
 
     Thread.new(slot, watcher, temporary, publications) do |replication_slot, watcher, use_temporary_slot, publications|
       replication_slot = "#{replication_slot}_#{SecureRandom.alphanumeric(4)}" if use_temporary_slot
