@@ -5,7 +5,11 @@ require "docopt"
 begin
   cli = Docopt.docopt(<<~DOCOPT)
     Usage:
-      wal watch --watcher <watcher-class> (--slot <replication-slot> | --tmp-slot) [--publication=<publication>...] [--with-timings] [--replicator <replicator-class>]
+      wal watch --watcher <watcher-class>
+        (--slot <replication-slot> | --tmp-slot)
+        [--publication=<publication>...]
+        [--replicator <replicator-class>]
+
       wal start <config-file>
 
     Options:
@@ -14,7 +18,6 @@ begin
       --slot=<replication-slot>          The replication slot that will be used.
       --tmp-slot                         Use a temporary replication slot.
       [--publication=<publication>...]   Force using the informed Postgres publications.
-      [--with-timings]                   Add timing logs to the output.
       [--replicator=<replicatior_class>] Change the replication driver class
   DOCOPT
 rescue Docopt::Exit => err
