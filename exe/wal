@@ -47,7 +47,7 @@ elsif cli["start"]
     watcher = config["watcher"].constantize.new
     temporary = config["temporary"] || false
     publications = config["publications"] || []
-    replicator = config["--replicator"].presence&.constantize || Wal::Replicator
+    replicator = config["replicator"].presence&.constantize || Wal::Replicator
 
     Thread.new(slot, watcher, temporary, publications) do |replication_slot, watcher, use_temporary_slot, publications|
       replication_slot = "#{replication_slot}_#{SecureRandom.alphanumeric(4)}" if use_temporary_slot
