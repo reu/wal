@@ -103,7 +103,7 @@ module Wal
     include Wal::Watcher
     extend T::Sig
 
-    sig { override.params(event: Event).void }
+    sig { override.params(event: Wal::Event).void }
     def on_event(event); end
   end
 
@@ -113,21 +113,21 @@ module Wal
     include Wal::Watcher
     extend T::Sig
     extend T::Helpers
-    RecordEvent = T.type_alias { T.any(InsertEvent, UpdateEvent, DeleteEvent) }
+    RecordEvent = T.type_alias { T.any(Wal::InsertEvent, Wal::UpdateEvent, Wal::DeleteEvent) }
 
     sig { params(subclass: T.untyped).returns(T.untyped) }
     def self.inherited(subclass); end
 
-    sig { params(table: T.any(String, T.class_of(::ActiveRecord::Base)), block: T.proc.bind(T.attached_class).params(event: InsertEvent).void).void }
+    sig { params(table: T.any(String, T.class_of(::ActiveRecord::Base)), block: T.proc.bind(T.attached_class).params(event: Wal::InsertEvent).void).void }
     def self.on_insert(table, &block); end
 
-    sig { params(table: T.any(String, T.class_of(::ActiveRecord::Base)), changed: T.nilable(T::Array[T.any(String, Symbol)]), block: T.proc.bind(T.attached_class).params(event: UpdateEvent).void).void }
+    sig { params(table: T.any(String, T.class_of(::ActiveRecord::Base)), changed: T.nilable(T::Array[T.any(String, Symbol)]), block: T.proc.bind(T.attached_class).params(event: Wal::UpdateEvent).void).void }
     def self.on_update(table, changed: nil, &block); end
 
-    sig { params(table: T.any(String, T.class_of(::ActiveRecord::Base)), changed: T.nilable(T::Array[T.any(String, Symbol)]), block: T.proc.bind(T.attached_class).params(event: T.any(InsertEvent, UpdateEvent)).void).void }
+    sig { params(table: T.any(String, T.class_of(::ActiveRecord::Base)), changed: T.nilable(T::Array[T.any(String, Symbol)]), block: T.proc.bind(T.attached_class).params(event: T.any(Wal::InsertEvent, Wal::UpdateEvent)).void).void }
     def self.on_save(table, changed: nil, &block); end
 
-    sig { params(table: T.any(String, T.class_of(::ActiveRecord::Base)), block: T.proc.bind(T.attached_class).params(event: DeleteEvent).void).void }
+    sig { params(table: T.any(String, T.class_of(::ActiveRecord::Base)), block: T.proc.bind(T.attached_class).params(event: Wal::DeleteEvent).void).void }
     def self.on_destroy(table, &block); end
 
     sig { params(event: RecordEvent).void }
@@ -136,10 +136,10 @@ module Wal
     sig { params(table: String).returns(T::Boolean) }
     def should_watch_table?(table); end
 
-    sig { params(event: BeginTransactionEvent).returns(Symbol) }
+    sig { params(event: Wal::BeginTransactionEvent).returns(Symbol) }
     def aggregation_strategy(event); end
 
-    sig { override.params(event: Event).void }
+    sig { override.params(event: Wal::Event).void }
     def on_event(event); end
   end
 
@@ -150,10 +150,10 @@ module Wal
     sig { params(replication_slot: String, use_temporary_slot: T::Boolean, db_config: T::Hash[Symbol, T.untyped]).void }
     def initialize(replication_slot:, use_temporary_slot: false, db_config: ActiveRecord::Base.configurations.configs_for(name: "primary").configuration_hash); end
 
-    sig { params(watcher: Watcher, publications: T::Array[String]).void }
+    sig { params(watcher: Wal::Watcher, publications: T::Array[String]).void }
     def replicate_forever(watcher, publications:); end
 
-    sig { params(watcher: Watcher, publications: T::Array[String]).returns(T::Enumerator::Lazy[Event]) }
+    sig { params(watcher: Wal::Watcher, publications: T::Array[String]).returns(T::Enumerator::Lazy[Wal::Event]) }
     def replicate(watcher, publications:); end
   end
 
@@ -164,24 +164,23 @@ module Wal
     extend T::Sig
     extend T::Helpers
 
-    sig { abstract.params(events: T::Enumerator[Event]).void }
+    sig { abstract.params(events: T::Enumerator[Wal::Event]).void }
     def on_transaction_events(events); end
 
-    sig { params(event: BeginTransactionEvent).returns(Integer) }
+    sig { params(event: Wal::BeginTransactionEvent).returns(Integer) }
     def queue_size(event); end
 
-    sig { override.params(event: Event).void }
+    sig { override.params(event: Wal::Event).void }
     def on_event(event); end
   end
 
   module Watcher
     abstract!
 
-    include Wal
     extend T::Sig
     extend T::Helpers
 
-    sig { abstract.params(event: Event).void }
+    sig { abstract.params(event: Wal::Event).void }
     def on_event(event); end
 
     sig { params(table: String).returns(T::Boolean) }
@@ -193,22 +192,22 @@ module Wal
     module SeparatedEvents
       extend T::Sig
 
-      sig { params(event: Event).void }
+      sig { params(event: Wal::Event).void }
       def on_event(event); end
 
-      sig { params(event: BeginTransactionEvent).void }
+      sig { params(event: Wal::BeginTransactionEvent).void }
       def on_begin(event); end
 
-      sig { params(event: InsertEvent).void }
+      sig { params(event: Wal::InsertEvent).void }
       def on_insert(event); end
 
-      sig { params(event: UpdateEvent).void }
+      sig { params(event: Wal::UpdateEvent).void }
       def on_update(event); end
 
-      sig { params(event: DeleteEvent).void }
+      sig { params(event: Wal::DeleteEvent).void }
       def on_delete(event); end
 
-      sig { params(event: CommitTransactionEvent).void }
+      sig { params(event: Wal::CommitTransactionEvent).void }
       def on_commit(event); end
     end
   end
