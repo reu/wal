@@ -65,6 +65,14 @@ module Wal
       @@delete_callbacks[table].push(block: block)
     end
 
+    def self.change_callbacks
+      @@change_callbacks
+    end
+
+    def self.delete_callbacks
+      @@delete_callbacks
+    end
+
     def on_record_changed(event)
       case event
       when InsertEvent

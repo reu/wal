@@ -1,0 +1,9 @@
+class <%= migration_class_name %> < <%= activerecord_migration_class %>
+  def change
+    define_publication :<%= publication_name %> do |p|
+<% publication_tables.each do |table, columns| -%>
+      p.table :<%= table %><%= columns.present? ? ", columns: #{columns}" : "" %>
+<% end -%>
+    end
+  end
+end

@@ -8,6 +8,7 @@ require_relative "wal/record_watcher"
 require_relative "wal/streaming_watcher"
 require_relative "wal/replicator"
 require_relative "wal/active_record_context_extension"
+require_relative "wal/railtie"
 require_relative "wal/version"
 
 module Wal
