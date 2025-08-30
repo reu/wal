@@ -112,8 +112,8 @@ module Wal
     #
     # These strategies can be defined per transaction, and by default it will uses the memory one, and only fallback
     # to the temporary table if the transaction size is roughly 2 gigabytes or more.
-    def aggregation_strategy(event)
-      if event.estimated_size > 1024.pow(3) * 2
+    def aggregation_strategy(begin_transaction_event)
+      if begin_transaction_event.estimated_size > 1024.pow(3) * 2
         :temporary_table
       else
         :memory
