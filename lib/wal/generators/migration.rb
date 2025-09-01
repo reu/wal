@@ -10,7 +10,8 @@ module Wal
 
       source_root File.expand_path("templates", __dir__)
 
-      argument :watcher, type: :string
+      argument :watcher, type: :string, required: true, banner: "WATCHER_CLASS", desc: "Wal Watcher class name"
+      class_option :columns, type: :boolean, required: false, default: false
 
       def self.next_migration_number(dir)
         ::ActiveRecord::Generators::Base.next_migration_number(dir)
@@ -53,6 +54,7 @@ module Wal
             .delete_callbacks
             .keys
             .reduce(tables) { |tables, table| tables.reverse_merge(table => []) }
+            .transform_values { |cols| options[:columns] ? cols : [] }
         else
           []
         end
