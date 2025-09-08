@@ -43,7 +43,14 @@ if cli["watch"]
   puts "Watcher finished for #{replication_slot}"
 
 elsif cli["start"]
-  workers = YAML.load_file(cli["<config-file>"])["slots"].map do |slot, config|
+  slots = YAML.load_file(cli["<config-file>"])["slots"]
+
+  if slots.size > 1 && slots.values.any? { |slot| slot["replicator"] == "Wal::Pro::Replicator" }
+    $stderr.puts "Error: wal-pro doesn't support multiple replication slots"
+    exit 1
+  end
+
+  workers = slots.map do |slot, config|
     watcher = config["watcher"].constantize.new
     temporary = config["temporary"] || false
     publications = config["publications"] || []
