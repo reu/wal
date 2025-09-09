@@ -68,6 +68,15 @@ elsif cli["start"]
     end
   end
 
+  ping = Thread.new do
+    loop do
+      ActiveRecord::Base.connection.execute("SELECT pg_logical_emit_message(true, 'wal_ping', '{}')")
+      sleep 20
+    end
+  end
+
+  workers << ping
+
   Signal.trap("INT") do
     puts "Stopping WAL workers..."
     workers.each(&:kill)
