@@ -79,11 +79,15 @@ elsif cli["start"]
 
   workers << ping
 
-  Signal.trap("INT") do
+  stop_workers = proc do
     puts "Stopping WAL workers..."
     workers.each(&:kill)
     puts "WAL workers stopped"
+    exit 0
   end
+
+  Signal.trap("TERM", &stop_workers)
+  Signal.trap("INT", &stop_workers)
 
   workers.each(&:join)
 end
