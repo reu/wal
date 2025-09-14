@@ -7,7 +7,7 @@ module Wal
       UpdateEvent,
       DeleteEvent,
     ) }
-  VERSION = "0.0.13"
+  VERSION = "0.0.14"
 
   class BeginTransactionEvent < T::Struct
     prop :transaction_id, Integer, immutable: true
