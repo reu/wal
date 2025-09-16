@@ -102,13 +102,17 @@ module Wal
       (@@change_callbacks.keys | @@delete_callbacks.keys).include? table
     end
 
-    # `RecordWatcher` supports two processing strategies:
+    # `RecordWatcher` supports three processing strategies:
     #
     # `:memory`: Stores and aggregates records from a single transaction in memory. This has better performance but uses
     #  more memory, as at least one event for each record must be stored in memory until the end of a transaction
     #
     # `:temporary_table`: Offloads the record aggregation to a temporary table on the database. This is useful when you
     # are processing very large transactions that can't fit in memory. The tradeoff is obviously a worse performance.
+    #
+    # `:none`: Doesn't aggregate anything at all, so multiple updates on the same record on the same transaction would
+    # be notified. Also, if the same record is deleted on the same transaction it was created, this would end up
+    # triggering both `on_insert` and `on_delete` callbacks. This strategy should usually be avoided.
     #
     # These strategies can be defined per transaction, and by default it will uses the memory one, and only fallback
     # to the temporary table if the transaction size is roughly 2 gigabytes or more.
@@ -127,11 +131,28 @@ module Wal
           MemoryRecordWatcher.new(self)
         when :temporary_table
           TemporaryTableRecordWatcher.new(self)
+        when :none
+          NoAggregationWatcher.new(self)
         else
           raise "Invalid aggregation strategy: #{strategy}"
         end
       end
       @current_record_watcher.on_event(event)
+    end
+
+    class NoAggregationWatcher
+      include Wal::Watcher
+
+      def initialize(watcher)
+        @watcher = watcher
+      end
+
+      def on_event(event)
+        case event
+        when InsertEvent, UpdateEvent, DeleteEvent
+          @watcher.on_record_changed(event)
+        end
+      end
     end
 
     class MemoryRecordWatcher
