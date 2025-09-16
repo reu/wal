@@ -212,7 +212,7 @@ RSpec.describe Wal::RecordWatcher do
         mock = Minitest::Mock.new
 
         watcher = Class.new(Wal::RecordWatcher) do
-          on_destroy(Record) { |event| mock.on_destroy(event) }
+          on_delete(Record) { |event| mock.on_delete(event) }
 
           define_method(:aggregation_strategy) do |_|
             aggregation_strategy
@@ -227,7 +227,7 @@ RSpec.describe Wal::RecordWatcher do
           record.destroy!
         end
 
-        mock.expect(:on_destroy, true) do |event|
+        mock.expect(:on_delete, true) do |event|
           event.is_a?(Wal::DeleteEvent) && event.primary_key == record.id
         end
 

@@ -27,7 +27,7 @@ module Wal
   #     end
   #   end
   #
-  #   on_destroy OrderItem do |event|
+  #   on_delete OrderItem do |event|
   #     recalculate_inventory_availability(event.attribute(:item_id))
   #   end
   #
@@ -60,7 +60,7 @@ module Wal
       @@change_callbacks[table].push(only: [:create, :update], changed: changed&.map(&:to_s), block: block)
     end
 
-    def self.on_destroy(table, &block)
+    def self.on_delete(table, &block)
       table = table.is_a?(String) ? table : table.table_name
       @@delete_callbacks[table].push(block: block)
     end

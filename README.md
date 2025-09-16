@@ -14,7 +14,7 @@ class ProductAvailabilityWatcher < Wal::RecordWatcher
     recalculate_inventory_price(event.primary_key, event.new["price"])
   end
 
-  on_destroy Product do |event|
+  on_delete Product do |event|
     clear_product_inventory(event.primary_key)
   end
 

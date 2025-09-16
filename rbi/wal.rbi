@@ -128,7 +128,7 @@ module Wal
     def self.on_save(table, changed: nil, &block); end
 
     sig { params(table: T.any(String, T.class_of(::ActiveRecord::Base)), block: T.proc.bind(T.attached_class).params(event: Wal::DeleteEvent).void).void }
-    def self.on_destroy(table, &block); end
+    def self.on_delete(table, &block); end
 
     sig { params(event: RecordEvent).void }
     def on_record_changed(event); end
