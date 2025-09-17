@@ -32,7 +32,7 @@ module Wal
       end
 
       def publication_name
-        "#{watcher.underscore}_publication"
+        "#{class_name.gsub("Watcher", "").underscore}_publication"
       end
 
       def class_name
