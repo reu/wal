@@ -4,7 +4,7 @@ Wal is a framework that lets you hook into Postgres WAL events directly from you
 
 Unlike using database triggers, Wal allows you to keep your logic in your application code while still reacting to persistence events coming from the database.
 
-Also, unlike ActiveRecord callbacks, these events are guaranteed by Postgre to be 100% consistent, ensuring you never miss one.
+Also, unlike ActiveRecord callbacks, these events are guaranteed by Postgres to be 100% consistent, ensuring you never miss one.
 
 # Getting started
 
@@ -78,9 +78,11 @@ end
 
 You might wonder: *Why not just use ActiveRecord callbacks for this?*
 
-While callbacks seem simpler, they are not guaranteed to always run. Depending on the methods you use to perform the changes, it can be skipped.
+And while it is hard to justify that for our simple example, ActiveRecord callbacks are not guaranteed to always run. Depending on the methods you use to perform the changes, they can be skipped.
 
-Wal ensures every single change is captured. Even if updates happen directly in the database and bypass Rails entirely. That's the main reason to use it: when you need 100% consistency.
+Wal ensures every single change is captured. *Even when updates happen directly in the database and bypass Rails entirely*. That's the main reason to use it: when you need 100% consistency.
+
+Usually one could resort into database triggers when full consistency is required, but running and maintaining application level code on the database tends to be painful. Wal let's you do the same but at the application level.
 
 ## Configuring the Watcher
 
