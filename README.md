@@ -45,33 +45,41 @@ class DenormalizePostWatcher < Wal::RecordWatcher
 
   # When a `Post` title or body is changed, we update its `DenormalizedPost` record
   on_update Post, changed: [:title, :body] do |event|
-    DenormalizedPost.where(post_id: event.primary_key).update_all(
-      title: event.new["title"],
-      body: event.new["body"],
-    )
+    DenormalizedPost
+      .where(post_id: event.primary_key)
+      .update_all(
+        title: event.new["title"],
+        body: event.new["body"],
+      )
   end
 
   # When a `Post` category changes, we also update its `DenormalizedPost` record
   on_update Post, changed: [:category_id] do |event|
-    DenormalizedPost.where(post_id: event.primary_key).update_all(
-      category_id: event.new["category_id"],
-      category_name: Category.find_by(id: event.new["category_id"])&.name,
-    )
+    DenormalizedPost
+      .where(post_id: event.primary_key)
+      .update_all(
+        category_id: event.new["category_id"],
+        category_name: Category.find_by(id: event.new["category_id"])&.name,
+      )
   end
 
   # When a `Category` changes, we update all the `DenormalizedPosts` referencing it
   on_update Category, changed: [:name] do |event|
-    DenormalizedPost.where(category_id: event.primary_key).update_all(
-      category_name: event.new["name"],
-    )
+    DenormalizedPost
+      .where(category_id: event.primary_key)
+      .update_all(
+        category_name: event.new["name"],
+      )
   end
 
   # Finally when a `Category` is deleted, we clear all the `DenormalizedPosts` referencing it
-  on_update Category, changed: [:name] do |event|
-    DenormalizedPost.where(category_id: event.primary_key).update_all(
-      category_id: nil,
-      category_name: nil,
-    )
+  on_delete Category do |event|
+    DenormalizedPost
+      .where(category_id: event.primary_key)
+      .update_all(
+        category_id: nil,
+        category_name: nil,
+      )
   end
 end
 ```
