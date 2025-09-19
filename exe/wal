@@ -60,6 +60,8 @@ elsif cli["start"]
         .replicate_forever(watcher, publications:)
 
       puts "Watcher finished for #{replication_slot}"
+
+      Process.kill("TERM", Process.pid)
     end
   end
 
