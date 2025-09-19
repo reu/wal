@@ -9,6 +9,14 @@ module Wal
     ) }
   VERSION = "0.0.16"
 
+  class << self
+    sig { returns(T.class_of(Logger)) }
+    attr_accessor :logger
+  end
+
+  sig { params(block: T.proc.params(config: T.class_of(Wal)).void).void }
+  def self.configure(&block); end
+
   class BeginTransactionEvent < T::Struct
     prop :transaction_id, Integer, immutable: true
     prop :lsn, Integer, immutable: true

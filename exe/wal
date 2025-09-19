@@ -28,6 +28,38 @@ require "./config/environment"
 
 db_config = ActiveRecord::Base.configurations.configs_for(name: "primary").configuration_hash
 
+class Wal::LoggingReplicator
+  def initialize(slot, replicator)
+    @slot = slot
+    @replicator = replicator
+  end
+
+  def replicate_forever(watcher, publications:)
+    replication = @replicator.replicate(watcher, publications:)
+    count = 0
+    start = Time.now
+    loop do
+      case (event = replication.next)
+      when Wal::BeginTransactionEvent
+        start = Time.now
+        count = 0
+        if event.estimated_size > 0
+          Wal.logger&.debug("[#{@slot}] Begin transaction=#{event.transaction_id} size=#{event.estimated_size}")
+        end
+      when Wal::CommitTransactionEvent
+        if count > 0
+          elapsed = ((Time.now - start) * 1000.0).round(1)
+          Wal.logger&.info("[#{@slot}] Commit transaction=#{event.transaction_id} elapsed=#{elapsed} events=#{count}")
+        end
+      else
+        count += 1
+      end
+    end
+  rescue StopIteration
+    nil
+  end
+end
+
 if cli["watch"]
   watcher = cli["--watcher"].constantize.new
   use_temporary_slot = cli["--tmp-slot"] || false
@@ -37,9 +69,9 @@ if cli["watch"]
   replicator = cli["--replicator"].presence&.constantize || Wal::Replicator
 
   puts "Watcher started for #{replication_slot} slot (#{publications.join(", ")})"
-  replicator
-    .new(replication_slot:, use_temporary_slot:, db_config:)
-    .replicate_forever(watcher, publications:)
+  replicator = replicator.new(replication_slot:, use_temporary_slot:, db_config:)
+  replicator = Wal::LoggingReplicator.new(replication_slot, replicator)
+  replicator.replicate_forever(watcher, publications:)
   puts "Watcher finished for #{replication_slot}"
 
 elsif cli["start"]
@@ -55,9 +87,9 @@ elsif cli["start"]
       replication_slot = "#{replication_slot}_#{SecureRandom.alphanumeric(4)}" if use_temporary_slot
       puts "Watcher started for #{replication_slot} slot (#{publications.join(", ")})"
 
-      replicator
-        .new(replication_slot:, use_temporary_slot:, db_config:)
-        .replicate_forever(watcher, publications:)
+      replicator = replicator.new(replication_slot:, use_temporary_slot:, db_config:)
+      replicator = Wal::LoggingReplicator.new(replication_slot, replicator)
+      replicator.replicate_forever(watcher, publications:)
 
       puts "Watcher finished for #{replication_slot}"
 

@@ -12,6 +12,14 @@ require_relative "wal/railtie"
 require_relative "wal/version"
 
 module Wal
+  class << self
+    attr_accessor :logger
+  end
+
+  def self.configure(&block)
+    yield self
+  end
+
   class BeginTransactionEvent < Data.define(:transaction_id, :lsn, :final_lsn, :timestamp)
     def estimated_size
       final_lsn - lsn
