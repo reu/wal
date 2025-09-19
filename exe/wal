@@ -91,6 +91,7 @@ elsif cli["start"]
     temporary = config["temporary"] || false
     publications = config["publications"] || []
     replicator = config["replicator"].presence&.constantize || Wal::Replicator
+    retries = config["retries"]&.to_i || 5
 
     Thread.new(slot, watcher, temporary, publications) do |replication_slot, watcher, use_temporary_slot, publications|
       replication_slot = "#{replication_slot}_#{SecureRandom.alphanumeric(4)}" if use_temporary_slot
@@ -98,7 +99,18 @@ elsif cli["start"]
 
       replicator = replicator.new(replication_slot:, use_temporary_slot:, db_config:)
       replicator = Wal::LoggingReplicator.new(replication_slot, replicator)
-      replicator.replicate_forever(watcher, publications:)
+
+      begin
+        replicator.replicate_forever(watcher, publications:)
+      rescue StandardError => err
+        if retries > 0
+          Wal.logger&.error("[#{replication_slot}] Error #{err}")
+          retries -= 1
+          sleep 2 ** retries
+          retry
+        end
+        raise
+      end
 
       puts "Watcher finished for #{replication_slot}"
 
