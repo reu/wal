@@ -88,6 +88,7 @@ module Wal
 
         in XLogData(lsn:, data: PG::Replication::PGOutput::Message(prefix: "wal_ping"))
           watch_conn.standby_status_update(write_lsn: [watch_conn.last_confirmed_lsn, lsn].compact.max)
+          next
 
         in XLogData(data: PG::Replication::PGOutput::Message(prefix:, content:)) if watcher.valid_context_prefix? prefix
           begin
