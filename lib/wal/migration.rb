@@ -33,6 +33,7 @@ module Wal
         BEGIN
         CASE WHEN NOT EXISTS (SELECT 1 FROM pg_publication WHERE pubname = '#{name}') THEN
           CREATE PUBLICATION #{name};
+        ELSE NULL;
         END CASE;
         END;
         $$;
