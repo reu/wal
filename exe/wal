@@ -75,10 +75,10 @@ if cli["watch"]
   replication_slot = cli["--slot"]
   replication_slot = replication_slot.presence || "wal_watcher_#{SecureRandom.alphanumeric(4)}" if use_temporary_slot
   publications = cli["--publication"] || []
-  replicator = cli["--replicator"].presence&.constantize || Wal::Replicator
+  replicator_class = cli["--replicator"].presence&.constantize || Wal::Replicator
 
   puts "Watcher started for #{replication_slot} slot (#{publications.join(", ")})"
-  replicator = replicator.new(replication_slot:, use_temporary_slot:, db_config:)
+  replicator = replicator_class.new(replication_slot:, use_temporary_slot:, db_config:)
   replicator = Wal::LoggingReplicator.new(replication_slot, replicator)
   replicator.replicate_forever(watcher, publications:)
   puts "Watcher finished for #{replication_slot}"
@@ -90,14 +90,14 @@ elsif cli["start"]
     watcher = config["watcher"].constantize.new
     temporary = config["temporary"] || false
     publications = config["publications"] || []
-    replicator = config["replicator"].presence&.constantize || Wal::Replicator
+    replicator_class = config["replicator"].presence&.constantize || Wal::Replicator
     retries = config["retries"]&.to_i || 5
 
     Thread.new(slot, watcher, temporary, publications) do |replication_slot, watcher, use_temporary_slot, publications|
       replication_slot = "#{replication_slot}_#{SecureRandom.alphanumeric(4)}" if use_temporary_slot
       puts "Watcher started for #{replication_slot} slot (#{publications.join(", ")})"
 
-      replicator = replicator.new(replication_slot:, use_temporary_slot:, db_config:)
+      replicator = replicator_class.new(replication_slot:, use_temporary_slot:, db_config:)
       replicator = Wal::LoggingReplicator.new(replication_slot, replicator)
 
       begin
