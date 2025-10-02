@@ -9,7 +9,7 @@ Gem::Specification.new do |spec|
   spec.email = ["rnavarro@rnavarro.com.br"]
 
   spec.summary = "Hook up into Postgres WAL log"
-  spec.license = "MIT"
+  spec.license = "BSD-3-Clause"
   spec.required_ruby_version = ">= 3.2.0"
 
   spec.metadata["homepage_uri"] = "https://github.com/reu/wal"
