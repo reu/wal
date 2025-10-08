@@ -37,6 +37,13 @@ module Wal
 
   end
 
+  module TableName
+    extend T::Sig
+
+    sig { returns(String) }
+    def full_table_name; end
+  end
+
   module ChangeEvent
     extend T::Sig
 
@@ -60,10 +67,12 @@ module Wal
     prop :transaction_id, Integer, immutable: true
     prop :lsn, Integer, immutable: true
     prop :context, T::Hash[String, T.untyped], immutable: true
+    prop :schema, String, immutable: true
     prop :table, String, immutable: true
     prop :primary_key, T.untyped, immutable: true
     prop :new, T::Hash[String, T.untyped], immutable: true
 
+    include ::Wal::TableName
     include ::Wal::ChangeEvent
     extend T::Sig
 
@@ -75,11 +84,13 @@ module Wal
     prop :transaction_id, Integer, immutable: true
     prop :lsn, Integer, immutable: true
     prop :context, T::Hash[String, T.untyped], immutable: true
+    prop :schema, String, immutable: true
     prop :table, String, immutable: true
     prop :primary_key, T.untyped, immutable: true
     prop :old, T::Hash[String, T.untyped], immutable: true
     prop :new, T::Hash[String, T.untyped], immutable: true
 
+    include ::Wal::TableName
     include ::Wal::ChangeEvent
     extend T::Sig
 
@@ -91,10 +102,12 @@ module Wal
     prop :transaction_id, Integer, immutable: true
     prop :lsn, Integer, immutable: true
     prop :context, T::Hash[String, T.untyped], immutable: true
+    prop :schema, String, immutable: true
     prop :table, String, immutable: true
     prop :primary_key, T.untyped, immutable: true
     prop :old, T::Hash[String, T.untyped], immutable: true
 
+    include ::Wal::TableName
     include ::Wal::ChangeEvent
     extend T::Sig
 

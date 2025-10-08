@@ -35,6 +35,13 @@ RSpec.configure do |config|
         t.string :name
       end
       execute("ALTER TABLE records REPLICA IDENTITY FULL")
+
+      execute("CREATE SCHEMA alternate")
+      create_table "alternate.records", force: true do |t|
+        t.string :name
+      end
+      execute("ALTER TABLE alternate.records REPLICA IDENTITY FULL")
+
       execute("CREATE PUBLICATION debug_publication FOR ALL TABLES")
     end
 

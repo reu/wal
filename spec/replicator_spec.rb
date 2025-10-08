@@ -102,5 +102,25 @@ RSpec.describe Wal::Replicator do
       assert_equal context1, update_event.context
       assert_equal context2, delete_event.context
     end
+
+    it "supports multiple schemas" do
+      class AlternateRecord < ActiveRecord::Base
+        self.table_name = "alternate.records"
+      end
+
+      watcher = BufferWatcher.new
+      replication = create_testing_wal_replication(watcher, db_config: @pg_config)
+
+      ActiveRecord::Base.transaction do
+        AlternateRecord.create!(name: "OriginalName")
+      end
+
+      replicate_single_transaction(replication)
+
+      insert_event = watcher.received_events[1]
+
+      assert_equal "alternate", insert_event.schema
+      assert_equal "records", insert_event.table
+    end
   end
 end

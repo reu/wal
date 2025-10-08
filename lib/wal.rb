@@ -29,6 +29,17 @@ module Wal
   class CommitTransactionEvent < Data.define(:transaction_id, :lsn, :context, :timestamp)
   end
 
+  module TableName
+    def full_table_name
+      case schema
+      in "public"
+        table
+      else
+        "#{schema}.#{table}"
+      end
+    end
+  end
+
   module ChangeEvent
     def diff
       {}
@@ -55,7 +66,8 @@ module Wal
     end
   end
 
-  class InsertEvent < Data.define(:transaction_id, :lsn, :context, :table, :primary_key, :new)
+  class InsertEvent < Data.define(:transaction_id, :lsn, :context, :schema, :table, :primary_key, :new)
+    include ::Wal::TableName
     include ::Wal::ChangeEvent
 
     def diff
@@ -63,7 +75,8 @@ module Wal
     end
   end
 
-  class UpdateEvent < Data.define(:transaction_id, :lsn, :context, :table, :primary_key, :old, :new)
+  class UpdateEvent < Data.define(:transaction_id, :lsn, :context, :schema, :table, :primary_key, :old, :new)
+    include ::Wal::TableName
     include ::Wal::ChangeEvent
 
     def diff
@@ -73,7 +86,8 @@ module Wal
     end
   end
 
-  class DeleteEvent < Data.define(:transaction_id, :lsn, :context, :table, :primary_key, :old)
+  class DeleteEvent < Data.define(:transaction_id, :lsn, :context, :schema, :table, :primary_key, :old)
+    include ::Wal::TableName
     include ::Wal::ChangeEvent
 
     def diff

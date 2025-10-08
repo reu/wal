@@ -76,12 +76,12 @@ module Wal
     def on_record_changed(event)
       case event
       when InsertEvent
-        @@change_callbacks[event.table]
+        @@change_callbacks[event.full_table_name]
           .filter { |callback| callback[:only].include? :create }
           .each { |callback| instance_exec(event, &callback[:block]) }
 
       when UpdateEvent
-        @@change_callbacks[event.table]
+        @@change_callbacks[event.full_table_name]
           .filter { |callback| callback[:only].include? :update }
           .each do |callback|
             if (attributes = callback[:changed])
@@ -92,7 +92,7 @@ module Wal
           end
 
       when DeleteEvent
-        @@delete_callbacks[event.table].each do |callback|
+        @@delete_callbacks[event.full_table_name].each do |callback|
           instance_exec(event, &callback[:block])
         end
       end
@@ -184,7 +184,7 @@ module Wal
       def on_update(event)
         if (id = event.primary_key)
           @records ||= {}
-          @records[[event.table, id]] = case (existing_event = @records[[event.table, id]])
+          @records[[event.full_table_name, id]] = case (existing_event = @records[[event.full_table_name, id]])
           when InsertEvent
             # A record inserted on this transaction is being updated, which means it should still reflect as a insert
             # event, we just change the information to reflect the most current data that was just updated.
@@ -204,7 +204,7 @@ module Wal
       def on_delete(event)
         if (id = event.primary_key)
           @records ||= {}
-          @records[[event.table, id]] = case (existing_event = @records[[event.table, id]])
+          @records[[event.full_table_name, id]] = case (existing_event = @records[[event.full_table_name, id]])
           when InsertEvent
             # We are removing a record that was inserted on this transaction, we should not even report this change, as
             # this record never existed outside this transaction anyways.
@@ -304,9 +304,9 @@ module Wal
       end
 
       def on_delete(event)
-        case @table.where(table_name: event.table, primary_key: event.primary_key).pluck(:action, :old).first
+        case @table.where(table_name: event.full_table_name, primary_key: event.primary_key).pluck(:action, :old).first
         in ["insert", _]
-          @table.where(table_name: event.table, primary_key: event.primary_key).delete_all
+          @table.where(table_name: event.full_table_name, primary_key: event.primary_key).delete_all
         in ["update", old]
           @table.upsert(serialize(event).merge(old:))
         in ["delete", _]
@@ -326,7 +326,7 @@ module Wal
         serialized = {
           transaction_id: event.transaction_id,
           lsn: event.lsn,
-          table_name: event.table,
+          table_name: event.full_table_name,
           primary_key: event.primary_key,
           context: event.context,
         }
@@ -343,10 +343,12 @@ module Wal
       end
 
       def deserialize(persisted_event)
+        table, schema = persisted_event.table_name.split(".", 2)
         deserialized = {
           transaction_id: persisted_event.transaction_id,
           lsn: persisted_event.lsn,
-          table: persisted_event.table_name,
+          schema: schema || "public",
+          table: table,
           primary_key: persisted_event.primary_key,
           context: persisted_event.context,
         }

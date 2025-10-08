@@ -47,10 +47,11 @@ module Wal
 
       watch_conn.start_pgoutput_replication_slot(@replication_slot, publications, messages: true).filter_map do |msg|
         case msg
-        in XLogData(data: PG::Replication::PGOutput::Relation(oid:, name:, columns:))
+        in XLogData(data: PG::Replication::PGOutput::Relation(oid:, name:, columns:, namespace:))
           tables[oid] = Table.new(
             # TODO: for now we are forcing an id column here, but that is not really correct
             primary_key_colums: columns.any? { |col| col.name == "id" } ? ["id"] : [],
+            schema: namespace,
             name:,
             columns: columns.map do |col|
               Column.new(
@@ -100,7 +101,7 @@ module Wal
 
         in XLogData(lsn:, data: PG::Replication::PGOutput::Insert(oid:, new:))
           table = tables[oid]
-          next unless watcher.should_watch_table? table.name
+          next unless watcher.should_watch_table? table.full_table_name
           new_data = table.decode_row(new)
           record_id = table.primary_key(new_data)
           next unless record_id
@@ -109,6 +110,7 @@ module Wal
             transaction_id:,
             lsn:,
             context:,
+            schema: table.schema,
             table: table.name,
             primary_key: record_id,
             new: new_data,
@@ -116,7 +118,7 @@ module Wal
 
         in XLogData(lsn:, data: PG::Replication::PGOutput::Update(oid:, new:, old:))
           table = tables[oid]
-          next unless watcher.should_watch_table? table.name
+          next unless watcher.should_watch_table? table.full_table_name
           old_data = table.decode_row(old)
           new_data = table.decode_row(new)
           record_id = table.primary_key(new_data)
@@ -126,6 +128,7 @@ module Wal
             transaction_id:,
             lsn:,
             context:,
+            schema: table.schema,
             table: table.name,
             primary_key: record_id,
             old: old_data,
@@ -134,7 +137,7 @@ module Wal
 
         in XLogData(lsn:, data: PG::Replication::PGOutput::Delete(oid:, old:, key:))
           table = tables[oid]
-          next unless watcher.should_watch_table? table.name
+          next unless watcher.should_watch_table? table.full_table_name
           old_data = table.decode_row(old.presence || key)
           record_id = table.primary_key(old_data)
           next unless record_id
@@ -143,6 +146,7 @@ module Wal
             transaction_id:,
             lsn:,
             context:,
+            schema: table.schema,
             table: table.name,
             primary_key: record_id,
             old: old_data,
@@ -160,7 +164,16 @@ module Wal
       end
     end
 
-    class Table < Data.define(:name, :primary_key_colums, :columns)
+    class Table < Data.define(:schema, :name, :primary_key_colums, :columns)
+      def full_table_name
+        case schema
+        in "public"
+          name
+        else
+          "#{schema}.#{name}"
+        end
+      end
+
       def primary_key(decoded_row)
         case primary_key_colums
         in [key]
