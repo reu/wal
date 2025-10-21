@@ -41,47 +41,46 @@ module Wal
 
     def self.inherited(subclass)
       super
-      @@change_callbacks = Hash.new { |hash, key| hash[key] = [] }
-      @@delete_callbacks = Hash.new { |hash, key| hash[key] = [] }
+      subclass.class_eval do
+        def self.change_callbacks
+          @change_callbacks ||= Hash.new { |hash, key| hash[key] = [] }
+        end
+
+        def self.delete_callbacks
+          @delete_callbacks ||= Hash.new { |hash, key| hash[key] = [] }
+        end
+      end
     end
 
     def self.on_insert(table, &block)
       table = table.is_a?(String) ? table : table.table_name
-      @@change_callbacks[table].push(only: [:create], block: block)
+      change_callbacks[table].push(only: [:create], block: block)
     end
 
     def self.on_update(table, changed: nil, &block)
       table = table.is_a?(String) ? table : table.table_name
-      @@change_callbacks[table].push(only: [:update], changed: changed&.map(&:to_s), block: block)
+      change_callbacks[table].push(only: [:update], changed: changed&.map(&:to_s), block: block)
     end
 
     def self.on_save(table, changed: nil, &block)
       table = table.is_a?(String) ? table : table.table_name
-      @@change_callbacks[table].push(only: [:create, :update], changed: changed&.map(&:to_s), block: block)
+      change_callbacks[table].push(only: [:create, :update], changed: changed&.map(&:to_s), block: block)
     end
 
     def self.on_delete(table, &block)
       table = table.is_a?(String) ? table : table.table_name
-      @@delete_callbacks[table].push(block: block)
-    end
-
-    def self.change_callbacks
-      @@change_callbacks
-    end
-
-    def self.delete_callbacks
-      @@delete_callbacks
+      delete_callbacks[table].push(block: block)
     end
 
     def on_record_changed(event)
       case event
       when InsertEvent
-        @@change_callbacks[event.full_table_name]
+        self.class.change_callbacks[event.full_table_name]
           .filter { |callback| callback[:only].include? :create }
           .each { |callback| instance_exec(event, &callback[:block]) }
 
       when UpdateEvent
-        @@change_callbacks[event.full_table_name]
+        self.class.change_callbacks[event.full_table_name]
           .filter { |callback| callback[:only].include? :update }
           .each do |callback|
             if (attributes = callback[:changed])
@@ -92,14 +91,14 @@ module Wal
           end
 
       when DeleteEvent
-        @@delete_callbacks[event.full_table_name].each do |callback|
+        self.class.delete_callbacks[event.full_table_name].each do |callback|
           instance_exec(event, &callback[:block])
         end
       end
     end
 
     def should_watch_table?(table)
-      (@@change_callbacks.keys | @@delete_callbacks.keys).include? table
+      (self.class.change_callbacks.keys | self.class.delete_callbacks.keys).include? table
     end
 
     # `RecordWatcher` supports three processing strategies:
