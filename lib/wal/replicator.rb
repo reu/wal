@@ -155,6 +155,9 @@ module Wal
         else
           next
         end
+      rescue
+        watch_conn&.close
+        raise
       end
     end
 
