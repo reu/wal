@@ -91,7 +91,10 @@ elsif cli["start"]
     temporary = config["temporary"] || false
     publications = config["publications"] || []
     replicator_class = config["replicator"].presence&.constantize || Wal::Replicator
-    retries = config["retries"]&.to_i || 5
+    max_retries = config["retries"]&.to_i || (2**32 - 1)
+    retries = 0
+    backoff = config["retry_backoff"]&.to_f || 1
+    backoff_expoent = config["retry_backoff_expoent"]&.to_f
 
     Thread.new(slot, watcher, temporary, publications) do |replication_slot, watcher, use_temporary_slot, publications|
       replication_slot = "#{replication_slot}_#{SecureRandom.alphanumeric(4)}" if use_temporary_slot
@@ -103,10 +106,13 @@ elsif cli["start"]
       begin
         replicator.replicate_forever(watcher, publications:)
       rescue StandardError => err
-        if retries > 0
+        if retries < max_retries
           Wal.logger&.error("[#{replication_slot}] Error #{err}")
-          retries -= 1
-          sleep 2 ** retries
+          retries += 1
+          backoff_time = backoff_expoent ? (backoff * retries) ** backoff_expoent : backoff
+          puts "Restarting #{replication_slot} in #{backoff_time.floor(2)}s..."
+          sleep backoff_time
+          puts "Restarting #{replication_slot}"
           retry
         end
         raise
