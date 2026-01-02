@@ -14,6 +14,10 @@ require_relative "wal/version"
 module Wal
   class << self
     attr_accessor :logger
+
+    def logger
+      @logger ||= Logger.new($stdout, level: :info)
+    end
   end
 
   def self.configure(&block)
