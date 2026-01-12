@@ -69,7 +69,7 @@ class Wal::LoggingReplicator
   end
 end
 
-if cli["watch"]
+def watch(db_config, cli)
   watcher = cli["--watcher"].constantize.new
   use_temporary_slot = cli["--tmp-slot"] || false
   replication_slot = cli["--slot"]
@@ -82,46 +82,50 @@ if cli["watch"]
   replicator = Wal::LoggingReplicator.new(replication_slot, replicator)
   replicator.replicate_forever(watcher, publications:)
   puts "Watcher finished for #{replication_slot}"
+end
 
-elsif cli["start"]
+def start_worker(db_config, slot, config)
+  watcher = config["watcher"].constantize.new
+  temporary = config["temporary"] || false
+  publications = config["publications"] || []
+  replicator_class = config["replicator"].presence&.constantize || Wal::Replicator
+  max_retries = config["retries"]&.to_i || (2**32 - 1)
+  retries = 0
+  backoff = config["retry_backoff"]&.to_f || 1
+  backoff_expoent = config["retry_backoff_expoent"]&.to_f
+
+  Thread.new(slot, watcher, temporary, publications) do |replication_slot, watcher, use_temporary_slot, publications|
+    replication_slot = "#{replication_slot}_#{SecureRandom.alphanumeric(4)}" if use_temporary_slot
+    puts "Watcher started for #{replication_slot} slot (#{publications.join(", ")})"
+
+    begin
+      replicator = replicator_class.new(replication_slot:, use_temporary_slot:, db_config:)
+      replicator = Wal::LoggingReplicator.new(replication_slot, replicator)
+      replicator.replicate_forever(watcher, publications:)
+    rescue StandardError => err
+      if retries < max_retries
+        Wal.logger&.error("[#{replication_slot}] Error #{err}")
+        retries += 1
+        backoff_time = backoff_expoent ? (backoff * retries) ** backoff_expoent : backoff
+        puts "Restarting #{replication_slot} in #{backoff_time.floor(2)}s..."
+        sleep backoff_time
+        puts "Restarting #{replication_slot}"
+        retry
+      end
+      raise
+    end
+
+    puts "Watcher finished for #{replication_slot}"
+
+    Process.kill("TERM", Process.pid)
+  end
+end
+
+def start(db_config, cli)
   slots = YAML.load_file(cli["<config-file>"])["slots"]
 
   workers = slots.map do |slot, config|
-    watcher = config["watcher"].constantize.new
-    temporary = config["temporary"] || false
-    publications = config["publications"] || []
-    replicator_class = config["replicator"].presence&.constantize || Wal::Replicator
-    max_retries = config["retries"]&.to_i || (2**32 - 1)
-    retries = 0
-    backoff = config["retry_backoff"]&.to_f || 1
-    backoff_expoent = config["retry_backoff_expoent"]&.to_f
-
-    Thread.new(slot, watcher, temporary, publications) do |replication_slot, watcher, use_temporary_slot, publications|
-      replication_slot = "#{replication_slot}_#{SecureRandom.alphanumeric(4)}" if use_temporary_slot
-      puts "Watcher started for #{replication_slot} slot (#{publications.join(", ")})"
-
-      replicator = replicator_class.new(replication_slot:, use_temporary_slot:, db_config:)
-      replicator = Wal::LoggingReplicator.new(replication_slot, replicator)
-
-      begin
-        replicator.replicate_forever(watcher, publications:)
-      rescue StandardError => err
-        if retries < max_retries
-          Wal.logger&.error("[#{replication_slot}] Error #{err}")
-          retries += 1
-          backoff_time = backoff_expoent ? (backoff * retries) ** backoff_expoent : backoff
-          puts "Restarting #{replication_slot} in #{backoff_time.floor(2)}s..."
-          sleep backoff_time
-          puts "Restarting #{replication_slot}"
-          retry
-        end
-        raise
-      end
-
-      puts "Watcher finished for #{replication_slot}"
-
-      Process.kill("TERM", Process.pid)
-    end
+    start_worker(db_config, slot, config)
   end
 
   ping = Thread.new do
@@ -146,4 +150,10 @@ elsif cli["start"]
   Signal.trap("INT", &stop_workers)
 
   workers.each(&:join)
+end
+
+if cli["watch"]
+  watch(db_config, cli)
+elsif cli["start"]
+  start(db_config, cli)
 end
