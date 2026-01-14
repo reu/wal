@@ -35,4 +35,6 @@ jobs:
       with:
         ruby-version: ${{ matrix.ruby }}
         bundler-cache: true
+
+    - run: gem uninstall minitest
     - run: rake test
