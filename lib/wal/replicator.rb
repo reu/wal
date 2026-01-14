@@ -1,5 +1,3 @@
-require "ostruct"
-
 module Wal
   # Responsible to hook into a Postgres logical replication slot and stream the changes to a specific `Watcher`.
   # Also it supports inject "contexts" into the replication events.
@@ -53,16 +51,7 @@ module Wal
             primary_key_colums: columns.any? { |col| col.name == "id" } ? ["id"] : [],
             schema: namespace,
             name:,
-            columns: columns.map do |col|
-              Column.new(
-                name: col.name,
-                decoder: ActiveRecord::Base.connection.lookup_cast_type_from_column(
-                  # We have to create this OpenStruct because weird AR API reasons...
-                  # And the `sql_type` param luckly doesn't really matter for our use case
-                  ::OpenStruct.new(oid: col.oid, fmod: col.modifier, sql_type: "")
-                ),
-              )
-            end
+            columns: columns.map { |col| Column.new(oid: col.oid, name: col.name) },
           )
           next
 
@@ -161,9 +150,181 @@ module Wal
       end
     end
 
-    class Column < Data.define(:name, :decoder)
+    class Column < Data.define(:name, :oid)
+      BOOLEAN_DECODER = PG::TextDecoder::Boolean.new
+      BYTEA_DECODER = PG::TextDecoder::Bytea.new
+      INTEGER_DECODER = PG::TextDecoder::Integer.new
+      FLOAT_DECODER = PG::TextDecoder::Float.new
+      NUMERIC_DECODER = PG::TextDecoder::Numeric.new
+      DATE_DECODER = PG::TextDecoder::Date.new
+      TIMESTAMP_DECODER = PG::TextDecoder::TimestampWithoutTimeZone.new
+      TIMESTAMPTZ_DECODER = PG::TextDecoder::TimestampWithTimeZone.new
+      JSON_DECODER = PG::TextDecoder::JSON.new
+      INET_DECODER = PG::TextDecoder::Inet.new
+      STRING_DECODER = PG::TextDecoder::String.new
+
+      BOOLEAN_ARRAY_DECODER = PG::TextDecoder::Array.new(elements_type: BOOLEAN_DECODER)
+      BYTEA_ARRAY_DECODER = PG::TextDecoder::Array.new(elements_type: BYTEA_DECODER)
+      INTEGER_ARRAY_DECODER = PG::TextDecoder::Array.new(elements_type: INTEGER_DECODER)
+      FLOAT_ARRAY_DECODER = PG::TextDecoder::Array.new(elements_type: FLOAT_DECODER)
+      NUMERIC_ARRAY_DECODER = PG::TextDecoder::Array.new(elements_type: NUMERIC_DECODER)
+      DATE_ARRAY_DECODER = PG::TextDecoder::Array.new(elements_type: DATE_DECODER)
+      TIMESTAMP_ARRAY_DECODER = PG::TextDecoder::Array.new(elements_type: TIMESTAMP_DECODER)
+      TIMESTAMPTZ_ARRAY_DECODER = PG::TextDecoder::Array.new(elements_type: TIMESTAMPTZ_DECODER)
+      JSON_ARRAY_DECODER = PG::TextDecoder::Array.new(elements_type: JSON_DECODER)
+      INET_ARRAY_DECODER = PG::TextDecoder::Array.new(elements_type: INET_DECODER)
+      STRING_ARRAY_DECODER = PG::TextDecoder::Array.new(elements_type: STRING_DECODER)
+
+      # Reference: https://github.com/postgres/postgres/blob/master/src/include/catalog/pg_type.dat
+      DECODERS = {
+        16 => BOOLEAN_DECODER,         # bool
+        1000 => BOOLEAN_ARRAY_DECODER, # _bool
+
+        17 => BYTEA_DECODER,         # bytea
+        1001 => BYTEA_ARRAY_DECODER, # _bytea
+
+        20 => INTEGER_DECODER,         # int8
+        21 => INTEGER_DECODER,         # int2
+        23 => INTEGER_DECODER,         # int4
+        26 => INTEGER_DECODER,         # oid
+        28 => INTEGER_DECODER,         # xid
+        29 => INTEGER_DECODER,         # cid
+        5069 => INTEGER_DECODER,       # xid8
+        1005 => INTEGER_ARRAY_DECODER, # _int2
+        1007 => INTEGER_ARRAY_DECODER, # _int4
+        1016 => INTEGER_ARRAY_DECODER, # _int8
+        1028 => INTEGER_ARRAY_DECODER, # _oid
+        1011 => INTEGER_ARRAY_DECODER, # _xid
+        1012 => INTEGER_ARRAY_DECODER, # _cid
+        271 => INTEGER_ARRAY_DECODER,  # _xid8
+
+        700 => FLOAT_DECODER,        # float4
+        701 => FLOAT_DECODER,        # float8
+        1021 => FLOAT_ARRAY_DECODER, # _float4
+        1022 => FLOAT_ARRAY_DECODER, # _float8
+
+        1700 => NUMERIC_DECODER,       # numeric
+        790 => NUMERIC_DECODER,        # money
+        1231 => NUMERIC_ARRAY_DECODER, # _numeric
+        791 => NUMERIC_ARRAY_DECODER,  # _money
+
+        1082 => DATE_DECODER,              # date
+        1114 => TIMESTAMP_DECODER,         # timestamp
+        1184 => TIMESTAMPTZ_DECODER,       # timestamptz
+        1083 => STRING_DECODER,            # time (no dedicated decoder, use string)
+        1266 => STRING_DECODER,            # timetz
+        1186 => STRING_DECODER,            # interval
+        1182 => DATE_ARRAY_DECODER,        # _date
+        1115 => TIMESTAMP_ARRAY_DECODER,   # _timestamp
+        1185 => TIMESTAMPTZ_ARRAY_DECODER, # _timestamptz
+        1183 => STRING_ARRAY_DECODER,      # _time
+        1270 => STRING_ARRAY_DECODER,      # _timetz
+        1187 => STRING_ARRAY_DECODER,      # _interval
+
+        114 => JSON_DECODER,          # json
+        3802 => JSON_DECODER,         # jsonb
+        199 => JSON_ARRAY_DECODER,    # _json
+        3807 => JSON_ARRAY_DECODER,   # _jsonb
+        4072 => STRING_DECODER,       # jsonpath
+        4073 => STRING_ARRAY_DECODER, # _jsonpath
+
+        869 => INET_DECODER,          # inet
+        650 => INET_DECODER,          # cidr
+        829 => STRING_DECODER,        # macaddr
+        774 => STRING_DECODER,        # macaddr8
+        1041 => INET_ARRAY_DECODER,   # _inet
+        651 => INET_ARRAY_DECODER,    # _cidr
+        1040 => STRING_ARRAY_DECODER, # _macaddr
+        775 => STRING_ARRAY_DECODER,  # _macaddr8
+
+        18 => STRING_DECODER,         # char
+        19 => STRING_DECODER,         # name
+        25 => STRING_DECODER,         # text
+        1042 => STRING_DECODER,       # bpchar
+        1043 => STRING_DECODER,       # varchar
+        2950 => STRING_DECODER,       # uuid
+        142 => STRING_DECODER,        # xml
+        1002 => STRING_ARRAY_DECODER, # _char
+        1003 => STRING_ARRAY_DECODER, # _name
+        1009 => STRING_ARRAY_DECODER, # _text
+        1014 => STRING_ARRAY_DECODER, # _bpchar
+        1015 => STRING_ARRAY_DECODER, # _varchar
+        2951 => STRING_ARRAY_DECODER, # _uuid
+        143 => STRING_ARRAY_DECODER,  # _xml
+
+        1560 => STRING_DECODER,       # bit
+        1562 => STRING_DECODER,       # varbit
+        1561 => STRING_ARRAY_DECODER, # _bit
+        1563 => STRING_ARRAY_DECODER, # _varbit
+
+        600 => STRING_DECODER,        # point
+        601 => STRING_DECODER,        # lseg
+        602 => STRING_DECODER,        # path
+        603 => STRING_DECODER,        # box
+        604 => STRING_DECODER,        # polygon
+        628 => STRING_DECODER,        # line
+        718 => STRING_DECODER,        # circle
+        1017 => STRING_ARRAY_DECODER, # _point
+        1018 => STRING_ARRAY_DECODER, # _lseg
+        1019 => STRING_ARRAY_DECODER, # _path
+        1020 => STRING_ARRAY_DECODER, # _box
+        1027 => STRING_ARRAY_DECODER, # _polygon
+        629 => STRING_ARRAY_DECODER,  # _line
+        719 => STRING_ARRAY_DECODER,  # _circle
+
+        3904 => STRING_DECODER,       # int4range
+        3906 => STRING_DECODER,       # numrange
+        3908 => STRING_DECODER,       # tsrange
+        3910 => STRING_DECODER,       # tstzrange
+        3912 => STRING_DECODER,       # daterange
+        3926 => STRING_DECODER,       # int8range
+        4451 => STRING_DECODER,       # int4multirange
+        4532 => STRING_DECODER,       # nummultirange
+        4533 => STRING_DECODER,       # tsmultirange
+        4534 => STRING_DECODER,       # tstzmultirange
+        4535 => STRING_DECODER,       # datemultirange
+        4536 => STRING_DECODER,       # int8multirange
+        3905 => STRING_ARRAY_DECODER, # _int4range
+        3907 => STRING_ARRAY_DECODER, # _numrange
+        3909 => STRING_ARRAY_DECODER, # _tsrange
+        3911 => STRING_ARRAY_DECODER, # _tstzrange
+        3913 => STRING_ARRAY_DECODER, # _daterange
+        3927 => STRING_ARRAY_DECODER, # _int8range
+
+        3614 => STRING_DECODER,       # tsvector
+        3615 => STRING_DECODER,       # tsquery
+        3643 => STRING_ARRAY_DECODER, # _tsvector
+        3645 => STRING_ARRAY_DECODER, # _tsquery
+
+        3220 => STRING_DECODER,       # pg_lsn
+        3221 => STRING_ARRAY_DECODER, # _pg_lsn
+
+        24 => INTEGER_DECODER,         # regproc
+        2202 => INTEGER_DECODER,       # regprocedure
+        2203 => INTEGER_DECODER,       # regoper
+        2204 => INTEGER_DECODER,       # regoperator
+        2205 => INTEGER_DECODER,       # regclass
+        2206 => INTEGER_DECODER,       # regtype
+        4096 => INTEGER_DECODER,       # regrole
+        4089 => INTEGER_DECODER,       # regnamespace
+        3734 => INTEGER_DECODER,       # regconfig
+        3769 => INTEGER_DECODER,       # regdictionary
+        4191 => INTEGER_DECODER,       # regcollation
+        1008 => INTEGER_ARRAY_DECODER, # _regproc
+        2207 => INTEGER_ARRAY_DECODER, # _regprocedure
+        2208 => INTEGER_ARRAY_DECODER, # _regoper
+        2209 => INTEGER_ARRAY_DECODER, # _regoperator
+        2210 => INTEGER_ARRAY_DECODER, # _regclass
+        2211 => INTEGER_ARRAY_DECODER, # _regtype
+        4097 => INTEGER_ARRAY_DECODER, # _regrole
+        4090 => INTEGER_ARRAY_DECODER, # _regnamespace
+        3735 => INTEGER_ARRAY_DECODER, # _regconfig
+        3770 => INTEGER_ARRAY_DECODER, # _regdictionary
+        4192 => INTEGER_ARRAY_DECODER, # _regcollation
+      }.freeze
+
       def decode(value)
-        decoder.deserialize(value)
+        value&.then { (DECODERS[oid] || STRING_DECODER).decode(_1) }
       end
     end
 
