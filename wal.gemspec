@@ -31,6 +31,6 @@ Gem::Specification.new do |spec|
   spec.add_dependency "pg", "~> 1.0"
   spec.add_dependency "ostruct"
   spec.add_dependency "docopt"
-  spec.add_dependency "pg-replication-protocol", "~> 0.0.7"
+  spec.add_dependency "pg-replication-protocol", "~> 0.0.8"
   spec.add_dependency "activerecord", ">= 7"
 end
