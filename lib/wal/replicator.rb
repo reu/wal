@@ -21,8 +21,14 @@ module Wal
       nil
     end
 
+    def close
+      @watch_conn&.stop_replication
+      @watch_conn&.close
+      @watch_conn = nil
+    end
+
     def replicate(watcher, publications:)
-      watch_conn = PG.connect(
+      @watch_conn = PG.connect(
         dbname: @db_config[:database],
         host: @db_config[:host],
         user: @db_config[:username],
@@ -32,7 +38,7 @@ module Wal
       )
 
       begin
-        watch_conn.query(<<~SQL)
+        @watch_conn.query(<<~SQL)
           CREATE_REPLICATION_SLOT #{@replication_slot} #{@use_temporary_slot ? "TEMPORARY" : ""} LOGICAL "pgoutput"
         SQL
       rescue PG::DuplicateObject
@@ -43,7 +49,7 @@ module Wal
       context = {}
       transaction_id = nil
 
-      watch_conn.start_pgoutput_replication_slot(@replication_slot, publications, messages: true).filter_map do |msg|
+      @watch_conn.start_pgoutput_replication_slot(@replication_slot, publications, messages: true).filter_map do |msg|
         case msg
         in XLogData(data: PG::Replication::PGOutput::Relation(oid:, name:, columns:, namespace:))
           tables[oid] = Table.new(
@@ -73,11 +79,11 @@ module Wal
             timestamp:,
           ).tap do |event|
             watcher.on_event(event)
-            watch_conn.standby_status_update(write_lsn: lsn)
+            @watch_conn.standby_status_update(write_lsn: lsn)
           end
 
         in XLogData(lsn:, data: PG::Replication::PGOutput::Message(prefix: "wal_ping"))
-          watch_conn.standby_status_update(write_lsn: [watch_conn.last_confirmed_lsn, lsn].compact.max)
+          @watch_conn.standby_status_update(write_lsn: [@watch_conn.last_confirmed_lsn, lsn].compact.max)
           next
 
         in XLogData(data: PG::Replication::PGOutput::Message(prefix:, content:)) if watcher.valid_context_prefix? prefix
@@ -145,7 +151,7 @@ module Wal
           next
         end
       rescue
-        watch_conn&.close
+        close
         raise
       end
     end

@@ -176,6 +176,9 @@ module Wal
 
     sig { params(watcher: Wal::Watcher, publications: T::Array[String]).returns(T::Enumerator::Lazy[Wal::Event]) }
     def replicate(watcher, publications:); end
+
+    sig { void }
+    def close; end
   end
 
   class StreamingWatcher
