@@ -122,5 +122,102 @@ RSpec.describe Wal::Replicator do
       assert_equal "alternate", insert_event.schema
       assert_equal "records", insert_event.table
     end
+
+    it "supports composite primary keys" do
+      watcher = BufferWatcher.new
+      replication = create_testing_wal_replication(watcher, db_config: @pg_config)
+
+      ActiveRecord::Base.transaction do
+        ActiveRecord::Base.connection.execute(
+          "INSERT INTO order_items (order_id, product_id, quantity) VALUES (1, 100, 5)"
+        )
+      end
+
+      replicate_single_transaction(replication)
+
+      insert_event = watcher.received_events[1]
+
+      assert_instance_of Wal::InsertEvent, insert_event
+      assert_equal "order_items", insert_event.table
+
+      # Verify composite primary key is an array
+      assert_instance_of Array, insert_event.primary_key
+      assert_equal [1, 100], insert_event.primary_key
+    end
+
+    it "supports composite primary key updates and deletes" do
+      watcher = BufferWatcher.new
+      replication = create_testing_wal_replication(watcher, db_config: @pg_config)
+
+      ActiveRecord::Base.transaction do
+        ActiveRecord::Base.connection.execute(
+          "INSERT INTO order_items (order_id, product_id, quantity) VALUES (2, 200, 10)"
+        )
+        ActiveRecord::Base.connection.execute(
+          "UPDATE order_items SET quantity = 20 WHERE order_id = 2 AND product_id = 200"
+        )
+        ActiveRecord::Base.connection.execute(
+          "DELETE FROM order_items WHERE order_id = 2 AND product_id = 200"
+        )
+      end
+
+      replicate_single_transaction(replication)
+
+      insert_event = watcher.received_events[1]
+      update_event = watcher.received_events[2]
+      delete_event = watcher.received_events[3]
+
+      # All events should have the same composite primary key
+      assert_equal [2, 200], insert_event.primary_key
+      assert_equal [2, 200], update_event.primary_key
+      assert_equal [2, 200], delete_event.primary_key
+
+      # Verify update event data
+      assert_equal 10, update_event.old["quantity"]
+      assert_equal 20, update_event.new["quantity"]
+    end
+
+    it "supports string primary keys" do
+      watcher = BufferWatcher.new
+      replication = create_testing_wal_replication(watcher, db_config: @pg_config)
+
+      uuid = SecureRandom.uuid
+
+      ActiveRecord::Base.transaction do
+        ActiveRecord::Base.connection.execute(
+          "INSERT INTO uuid_records (id, name) VALUES ('#{uuid}', 'TestRecord')"
+        )
+      end
+
+      replicate_single_transaction(replication)
+
+      insert_event = watcher.received_events[1]
+
+      assert_instance_of Wal::InsertEvent, insert_event
+      assert_equal "uuid_records", insert_event.table
+
+      # Verify string primary key
+      assert_instance_of String, insert_event.primary_key
+      assert_equal uuid, insert_event.primary_key
+    end
+
+    it "discovers primary key from PostgreSQL catalogs" do
+      watcher = BufferWatcher.new
+      replication = create_testing_wal_replication(watcher, db_config: @pg_config)
+
+      # Insert into the regular records table with auto-generated id
+      record_id = ActiveRecord::Base.transaction do
+        record = Record.create(name: "TestDiscovery")
+        record.id
+      end
+
+      replicate_single_transaction(replication)
+
+      insert_event = watcher.received_events[1]
+
+      # The primary key should be discovered from pg_constraint, not hardcoded
+      assert_instance_of Integer, insert_event.primary_key
+      assert_equal record_id, insert_event.primary_key
+    end
   end
 end

@@ -1,6 +1,7 @@
 require "testcontainers/postgres"
 require "debug"
 require "minitest"
+require "minitest/mock"
 require "wal"
 
 RSpec.configure do |config|
@@ -42,10 +43,39 @@ RSpec.configure do |config|
       end
       execute("ALTER TABLE alternate.records REPLICA IDENTITY FULL")
 
+      # Table with composite primary key
+      execute(<<~SQL)
+        CREATE TABLE order_items (
+          order_id INTEGER NOT NULL,
+          product_id INTEGER NOT NULL,
+          quantity INTEGER NOT NULL,
+          PRIMARY KEY (order_id, product_id)
+        )
+      SQL
+      execute("ALTER TABLE order_items REPLICA IDENTITY FULL")
+
+      # Table with string primary key
+      execute(<<~SQL)
+        CREATE TABLE uuid_records (
+          id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+          name VARCHAR(255)
+        )
+      SQL
+      execute("ALTER TABLE uuid_records REPLICA IDENTITY FULL")
+
       execute("CREATE PUBLICATION debug_publication FOR ALL TABLES")
     end
 
     class Record < ActiveRecord::Base; end
+
+    class OrderItem < ActiveRecord::Base
+      self.table_name = "order_items"
+      self.primary_key = [:order_id, :product_id]
+    end
+
+    class UuidRecord < ActiveRecord::Base
+      self.table_name = "uuid_records"
+    end
   end
 
   config.after(:suite) do

@@ -244,13 +244,13 @@ module Wal
             t.bigint :lsn, null: false
             t.column :action, :string, null: false
             t.string :table_name, null: false
-            t.bigint :primary_key
+            t.text :primary_key_data
             t.jsonb :old, null: false, default: {}
             t.jsonb :new, null: false, default: {}
             t.jsonb :context, null: false, default: {}
           end
 
-          unique_index = %i[table_name primary_key]
+          unique_index = %i[table_name primary_key_data]
 
           base_class.connection.add_index table_name, unique_index, unique: true
 
@@ -303,9 +303,10 @@ module Wal
       end
 
       def on_delete(event)
-        case @table.where(table_name: event.full_table_name, primary_key: event.primary_key).pluck(:action, :old).first
+        pk_data = serialize_primary_key(event.primary_key)
+        case @table.where(table_name: event.full_table_name, primary_key_data: pk_data).pluck(:action, :old).first
         in ["insert", _]
-          @table.where(table_name: event.full_table_name, primary_key: event.primary_key).delete_all
+          @table.where(table_name: event.full_table_name, primary_key_data: pk_data).delete_all
         in ["update", old]
           @table.upsert(serialize(event).merge(old:))
         in ["delete", _]
@@ -321,12 +322,23 @@ module Wal
         self.class.base_active_record_class || ::ActiveRecord::Base
       end
 
+      def serialize_primary_key(pk)
+        return nil if pk.nil?
+        Array(pk).to_json
+      end
+
+      def deserialize_primary_key(pk_data)
+        return nil if pk_data.nil?
+        values = JSON.parse(pk_data)
+        values.size == 1 ? values.first : values
+      end
+
       def serialize(event)
         serialized = {
           transaction_id: event.transaction_id,
           lsn: event.lsn,
           table_name: event.full_table_name,
-          primary_key: event.primary_key,
+          primary_key_data: serialize_primary_key(event.primary_key),
           context: event.context,
         }
         case event
@@ -348,7 +360,7 @@ module Wal
           lsn: persisted_event.lsn,
           schema: schema || "public",
           table: table,
-          primary_key: persisted_event.primary_key,
+          primary_key: deserialize_primary_key(persisted_event.primary_key_data),
           context: persisted_event.context,
         }
         case persisted_event.action

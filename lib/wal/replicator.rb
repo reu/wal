@@ -12,6 +12,7 @@ module Wal
       @db_config = db_config
       @replication_slot = replication_slot
       @use_temporary_slot = use_temporary_slot
+      @primary_key_cache = {}
     end
 
     def replicate_forever(watcher, publications:)
@@ -25,6 +26,8 @@ module Wal
       @watch_conn&.stop_replication
       @watch_conn&.close
       @watch_conn = nil
+      @metadata_conn&.close
+      @metadata_conn = nil
     end
 
     def replicate(watcher, publications:)
@@ -36,6 +39,8 @@ module Wal
         port: @db_config[:port].presence,
         replication: "database",
       )
+
+      @metadata_conn = connect_metadata
 
       begin
         @watch_conn.query(<<~SQL)
@@ -53,8 +58,7 @@ module Wal
         case msg
         in XLogData(data: PG::Replication::PGOutput::Relation(oid:, name:, columns:, namespace:))
           tables[oid] = Table.new(
-            # TODO: for now we are forcing an id column here, but that is not really correct
-            primary_key_colums: columns.any? { |col| col.name == "id" } ? ["id"] : [],
+            primary_key_columns: fetch_primary_key_columns(namespace, name),
             schema: namespace,
             name:,
             columns: columns.map { |col| Column.new(oid: col.oid, name: col.name) },
@@ -154,6 +158,52 @@ module Wal
         close
         raise
       end
+    end
+
+    private
+
+    def connect_metadata
+      PG.connect(
+        dbname: @db_config[:database],
+        host: @db_config[:host],
+        user: @db_config[:username],
+        password: @db_config[:password].presence,
+        port: @db_config[:port].presence,
+      )
+    end
+
+    def fetch_primary_key_columns(schema, table_name)
+      result = @metadata_conn.exec_params(<<~SQL, [schema, table_name]).to_a.map { |row| row["attname"] }
+        SELECT a.attname
+        FROM pg_constraint c
+        JOIN pg_class t ON c.conrelid = t.oid
+        JOIN pg_namespace n ON t.relnamespace = n.oid
+        JOIN pg_attribute a ON a.attrelid = t.oid AND a.attnum = ANY(c.conkey)
+        WHERE n.nspname = $1 AND t.relname = $2 AND c.contype = 'p'
+        ORDER BY array_position(c.conkey, a.attnum)
+      SQL
+
+      return result if result.size > 0
+
+      # Fallback to unique index columns
+      result = @metadata_conn.exec_params(<<~SQL, [schema, table_name]).to_a
+        SELECT a.attname, i.indexrelid::bigint
+        FROM pg_index i
+        JOIN pg_class t ON i.indrelid = t.oid
+        JOIN pg_namespace n ON t.relnamespace = n.oid
+        JOIN unnest(i.indkey) WITH ORDINALITY AS k(attnum, ord) ON true
+        JOIN pg_attribute a ON a.attrelid = t.oid AND a.attnum = k.attnum
+        WHERE n.nspname = $1 AND t.relname = $2 AND i.indisunique = true
+        ORDER BY i.indisprimary DESC, i.indexrelid, k.ord
+      SQL
+
+      result
+        .filter { |row| row["indexrelid"] == result.first["indexrelid"] }
+        .map { |row| row["attname"] } if result.size > 0
+
+    rescue PG::ConnectionBad
+      @metadata_conn = connect_metadata
+      retry
     end
 
     class Column < Data.define(:name, :oid)
@@ -334,7 +384,7 @@ module Wal
       end
     end
 
-    class Table < Data.define(:schema, :name, :primary_key_colums, :columns)
+    class Table < Data.define(:schema, :name, :primary_key_columns, :columns)
       def full_table_name
         case schema
         in "public"
@@ -345,21 +395,21 @@ module Wal
       end
 
       def primary_key(decoded_row)
-        case primary_key_colums
-        in [key]
-          case decoded_row[key]
-          in Integer => id
-            id
-          in String => id
-            id
+        return nil if primary_key_columns.empty?
+
+        values = primary_key_columns.filter_map do |col_name|
+          value = decoded_row[col_name]
+          case value
+          when Integer, String
+            value
           else
-            # Only supporting string and integer primary keys for now
             nil
           end
-        else
-          # Not supporting coumpound primary keys
-          nil
         end
+
+        return nil if values.size != primary_key_columns.size
+
+        values.size == 1 ? values.first : values
       end
 
       def decode_row(values)
