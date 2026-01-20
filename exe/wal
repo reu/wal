@@ -89,6 +89,7 @@ def start_worker(db_config, slot, config)
   temporary = config["temporary"] || false
   publications = config["publications"] || []
   replicator_class = config["replicator"].presence&.constantize || Wal::Replicator
+  auto_restart = config["auto_restart"].nil? || config["auto_restart"]
   max_retries = config["retries"]&.to_i || (2**32 - 1)
   retries = 0
   backoff = config["retry_backoff"]&.to_f || 1
@@ -102,6 +103,13 @@ def start_worker(db_config, slot, config)
       replicator = replicator_class.new(replication_slot:, use_temporary_slot:, db_config:)
       replicator = Wal::LoggingReplicator.new(replication_slot, replicator)
       replicator.replicate_forever(watcher, publications:)
+      if auto_restart
+        backoff_time = backoff_expoent ? (backoff * retries) ** backoff_expoent : backoff
+        puts "Watcher finished for #{replication_slot}, auto restarting in #{backoff_time.floor(2)}..."
+        sleep backoff_time
+        puts "Restarting #{replication_slot}"
+        redo
+      end
     rescue StandardError => err
       if retries < max_retries
         Wal.logger&.error("[#{replication_slot}] Error #{err}")
