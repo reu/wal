@@ -12,6 +12,12 @@ module Wal
   class << self
     sig { returns(T.class_of(Logger)) }
     attr_accessor :logger
+
+    sig { params(block: T.proc.void).void }
+    def before_fork(&block); end
+
+    sig { params(block: T.proc.void).void }
+    def after_fork(&block); end
   end
 
   sig { params(block: T.proc.params(config: T.class_of(Wal)).void).void }

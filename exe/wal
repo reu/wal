@@ -28,47 +28,6 @@ require "./config/environment"
 
 db_config = ActiveRecord::Base.configurations.configs_for(name: "primary").configuration_hash
 
-class Wal::LoggingReplicator
-  def initialize(slot, replicator)
-    @slot = slot
-    @replicator = replicator
-  end
-
-  def replicate_forever(watcher, publications:)
-    replication = @replicator.replicate(watcher, publications:)
-    count = 0
-    start = Time.now
-    loop do
-      case (event = replication.next)
-      when Wal::BeginTransactionEvent
-        start = Time.now
-        count = 0
-        if event.estimated_size > 0
-          Wal.logger&.info("[#{@slot}] Begin transaction=#{event.transaction_id} size=#{event.estimated_size}")
-        end
-      when Wal::CommitTransactionEvent
-        if count > 0
-          elapsed = ((Time.now - start) * 1000.0).round(1)
-          Wal.logger&.info("[#{@slot}] Commit transaction=#{event.transaction_id} elapsed=#{elapsed} events=#{count}")
-        end
-      when Wal::InsertEvent
-        Wal.logger&.debug("[#{@slot}] Insert transaction=#{event.transaction_id} table=#{event.table} primary_key=#{event.primary_key}")
-        count += 1
-      when Wal::UpdateEvent
-        Wal.logger&.debug("[#{@slot}] Update transaction=#{event.transaction_id} table=#{event.table} primary_key=#{event.primary_key}")
-        count += 1
-      when Wal::DeleteEvent
-        Wal.logger&.debug("[#{@slot}] Delete transaction=#{event.transaction_id} table=#{event.table} primary_key=#{event.primary_key}")
-        count += 1
-      else
-        count += 1
-      end
-    end
-  rescue StopIteration
-    nil
-  end
-end
-
 def watch(db_config, cli)
   watcher = cli["--watcher"].constantize.new
   use_temporary_slot = cli["--tmp-slot"] || false
@@ -78,90 +37,15 @@ def watch(db_config, cli)
   replicator_class = cli["--replicator"].presence&.constantize || Wal::Replicator
 
   puts "Watcher started for #{replication_slot} slot (#{publications.join(", ")})"
-  replicator = replicator_class.new(replication_slot:, use_temporary_slot:, db_config:)
-  replicator = Wal::LoggingReplicator.new(replication_slot, replicator)
-  replicator.replicate_forever(watcher, publications:)
+  replicator_class
+    .new(replication_slot:, use_temporary_slot:, db_config:)
+    .replicate_forever(Wal::LoggingWatcher.new(replication_slot, watcher), publications:)
   puts "Watcher finished for #{replication_slot}"
-end
-
-def start_worker(db_config, slot, config)
-  watcher = config["watcher"].constantize.new
-  temporary = config["temporary"] || false
-  publications = config["publications"] || []
-  replicator_class = config["replicator"].presence&.constantize || Wal::Replicator
-  auto_restart = config["auto_restart"].nil? || config["auto_restart"]
-  max_retries = config["retries"]&.to_i || (2**32 - 1)
-  retries = 0
-  backoff = config["retry_backoff"]&.to_f || 1
-  backoff_expoent = config["retry_backoff_expoent"]&.to_f
-
-  Thread.new(slot, watcher, temporary, publications) do |replication_slot, watcher, use_temporary_slot, publications|
-    replication_slot = "#{replication_slot}_#{SecureRandom.alphanumeric(4)}" if use_temporary_slot
-    puts "Watcher started for #{replication_slot} slot (#{publications.join(", ")})"
-
-    begin
-      replicator = replicator_class.new(replication_slot:, use_temporary_slot:, db_config:)
-      replicator = Wal::LoggingReplicator.new(replication_slot, replicator)
-      replicator.replicate_forever(watcher, publications:)
-      if auto_restart
-        backoff_time = backoff_expoent ? (backoff * retries) ** backoff_expoent : backoff
-        puts "Watcher finished for #{replication_slot}, auto restarting in #{backoff_time.floor(2)}..."
-        sleep backoff_time
-        puts "Restarting #{replication_slot}"
-        redo
-      end
-    rescue StandardError => err
-      if retries < max_retries
-        Wal.logger&.error("[#{replication_slot}] Error #{err}")
-        retries += 1
-        backoff_time = backoff_expoent ? (backoff * retries) ** backoff_expoent : backoff
-        puts "Restarting #{replication_slot} in #{backoff_time.floor(2)}s..."
-        sleep backoff_time
-        puts "Restarting #{replication_slot}"
-        retry
-      end
-      raise
-    end
-
-    puts "Watcher finished for #{replication_slot}"
-
-    Process.kill("TERM", Process.pid)
-  end
-end
-
-def start(db_config, cli)
-  slots = YAML.load_file(cli["<config-file>"])["slots"]
-
-  workers = slots.map do |slot, config|
-    start_worker(db_config, slot, config)
-  end
-
-  ping = Thread.new do
-    loop do
-      ActiveRecord::Base.connection_pool.with_connection do |conn|
-        conn.execute("SELECT pg_logical_emit_message(true, 'wal_ping', '{}')")
-      end
-      sleep 20
-    end
-  end
-
-  workers << ping
-
-  stop_workers = proc do
-    puts "Stopping WAL workers..."
-    workers.each(&:kill)
-    puts "WAL workers stopped"
-    exit 0
-  end
-
-  Signal.trap("TERM", &stop_workers)
-  Signal.trap("INT", &stop_workers)
-
-  workers.each(&:join)
 end
 
 if cli["watch"]
   watch(db_config, cli)
 elsif cli["start"]
-  start(db_config, cli)
+  runner = Wal::Runner.new(config_file: cli["<config-file>"], db_config:)
+  runner.start
 end

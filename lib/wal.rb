@@ -4,19 +4,34 @@ require "active_support"
 require "active_record"
 require_relative "wal/watcher"
 require_relative "wal/noop_watcher"
+require_relative "wal/logging_watcher"
 require_relative "wal/record_watcher"
 require_relative "wal/streaming_watcher"
 require_relative "wal/replicator"
 require_relative "wal/active_record_context_extension"
 require_relative "wal/railtie"
+require_relative "wal/runner"
 require_relative "wal/version"
 
 module Wal
   class << self
     attr_accessor :logger
+    attr_accessor :fork_hooks
 
     def logger
       @logger ||= Logger.new($stdout, level: :info)
+    end
+
+    def fork_hooks
+      @fork_hooks ||= {}
+    end
+
+    def before_fork(&block)
+      fork_hooks[:before_fork] = block
+    end
+
+    def after_fork(&block)
+      fork_hooks[:after_fork] = block
     end
   end
 
