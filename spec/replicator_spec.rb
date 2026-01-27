@@ -219,5 +219,63 @@ RSpec.describe Wal::Replicator do
       assert_instance_of Integer, insert_event.primary_key
       assert_equal record_id, insert_event.primary_key
     end
+
+    it "handles unchanged toasted values in update and delete events" do
+      watcher = BufferWatcher.new
+      replication = create_testing_wal_replication(watcher, db_config: @pg_config)
+
+      # Create large text values that will be TOASTed (> 2KB)
+      large_content = "x" * 10_000
+      updated_large_content = "y" * 10_000
+
+      record_id = ActiveRecord::Base.transaction do
+        record = ToastableRecord.create!(name: "Original", large_content: large_content)
+        # Update only the name, leaving large_content unchanged
+        # PostgreSQL will send a "toast unchanged" marker for large_content
+        record.update!(name: "Updated")
+        # Update the large_content to verify changed toasted values are reported correctly
+        record.update!(large_content: updated_large_content)
+        record.destroy!
+        record.id
+      end
+
+      replicate_single_transaction(replication)
+
+      insert_event = watcher.received_events[1]
+      update_event_name_only = watcher.received_events[2]
+      update_event_content = watcher.received_events[3]
+      delete_event = watcher.received_events[4]
+
+      assert_instance_of Wal::InsertEvent, insert_event
+      assert_instance_of Wal::UpdateEvent, update_event_name_only
+      assert_instance_of Wal::UpdateEvent, update_event_content
+      assert_instance_of Wal::DeleteEvent, delete_event
+
+      # Verify the insert event has the large content
+      assert_equal record_id, insert_event.primary_key
+      assert_equal "Original", insert_event.new["name"]
+      assert_equal large_content, insert_event.new["large_content"]
+
+      # Verify the first update event properly handles the unchanged toasted value
+      assert_equal record_id, update_event_name_only.primary_key
+      assert_equal "Original", update_event_name_only.old["name"]
+      assert_equal "Updated", update_event_name_only.new["name"]
+      # The key assertion: unchanged toasted values should be present in old data
+      # Without proper TOAST handling, this would be nil
+      assert_equal large_content, update_event_name_only.old["large_content"]
+      assert_equal large_content, update_event_name_only.new["large_content"]
+
+      # Verify the second update event reports the changed toasted value correctly
+      assert_equal record_id, update_event_content.primary_key
+      assert_equal "Updated", update_event_content.old["name"]
+      assert_equal "Updated", update_event_content.new["name"]
+      assert_equal large_content, update_event_content.old["large_content"]
+      assert_equal updated_large_content, update_event_content.new["large_content"]
+
+      # Verify the delete event has the final toasted value
+      assert_equal record_id, delete_event.primary_key
+      assert_equal "Updated", delete_event.old["name"]
+      assert_equal updated_large_content, delete_event.old["large_content"]
+    end
   end
 end

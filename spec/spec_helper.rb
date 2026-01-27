@@ -63,6 +63,13 @@ RSpec.configure do |config|
       SQL
       execute("ALTER TABLE uuid_records REPLICA IDENTITY FULL")
 
+      # Table with a TEXT column that can be TOASTed
+      create_table :toastable_records, force: true do |t|
+        t.string :name
+        t.text :large_content
+      end
+      execute("ALTER TABLE toastable_records REPLICA IDENTITY FULL")
+
       execute("CREATE PUBLICATION debug_publication FOR ALL TABLES")
     end
 
@@ -75,6 +82,10 @@ RSpec.configure do |config|
 
     class UuidRecord < ActiveRecord::Base
       self.table_name = "uuid_records"
+    end
+
+    class ToastableRecord < ActiveRecord::Base
+      self.table_name = "toastable_records"
     end
   end
 

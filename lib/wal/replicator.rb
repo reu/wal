@@ -118,8 +118,8 @@ module Wal
         in XLogData(lsn:, data: PG::Replication::PGOutput::Update(oid:, new:, old:))
           table = tables[oid]
           next unless watcher.should_watch_table? table.full_table_name
-          old_data = table.decode_row(old)
           new_data = table.decode_row(new)
+          old_data = table.decode_row(old, new_data)
           record_id = table.primary_key(new_data)
           next unless record_id
 
@@ -412,10 +412,10 @@ module Wal
         values.size == 1 ? values.first : values
       end
 
-      def decode_row(values)
+      def decode_row(values, existing_data = {})
         values
           .zip(columns)
-          .map { |tuple, col| [col.name, col.decode(tuple.data)] }
+          .map { |tuple, col| [col.name, tuple.toast? ? existing_data[col.name] : col.decode(tuple.data)] }
           .to_h
       end
     end
