@@ -23,6 +23,7 @@ module Wal
         temporary = config["temporary"] || false
         publications = config["publications"] || []
         replicator_class = config["replicator"].presence&.constantize || Wal::Replicator
+        replicator_params = config["replicator_params"]&.transform_keys(&:to_sym) || {}
         auto_restart = config["auto_restart"].nil? || config["auto_restart"]
         max_retries = config["retries"]&.to_i || (2**32 - 1)
         backoff = config["retry_backoff"]&.to_f || 1
@@ -35,7 +36,7 @@ module Wal
 
           begin
             replicator_class
-              .new(replication_slot:, use_temporary_slot:, db_config:)
+              .new(db_config:, **replicator_params, replication_slot:, use_temporary_slot:)
               .replicate_forever(Wal::LoggingWatcher.new(replication_slot, watcher), publications:)
             if auto_restart
               backoff_time = backoff_exponent ? (backoff * retries) ** backoff_exponent : backoff
@@ -44,6 +45,8 @@ module Wal
               puts "Restarting #{replication_slot}"
               redo
             end
+          rescue ArgumentError
+            raise
           rescue StandardError => err
             if retries < max_retries
               Wal.logger&.error("[#{replication_slot}] Error #{err}")
