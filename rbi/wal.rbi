@@ -7,7 +7,7 @@ module Wal
       UpdateEvent,
       DeleteEvent,
     ) }
-  VERSION = "0.0.31"
+  VERSION = "0.0.32"
 
   class << self
     sig { returns(T.class_of(Logger)) }
