@@ -91,6 +91,21 @@ module Wal
       slots = YAML.load_file(config_file)["slots"]
       workers_slots = slots.group_by { |_slot, config| config["worker"] || "default" }
 
+      if workers_slots.size == 1
+        run_single_worker(workers_slots.first)
+      else
+        run_forked_workers(workers_slots)
+      end
+    end
+
+    def run_single_worker((worker_name, slot_configs))
+      @ping_thread = start_ping_thread
+      puts "[#{worker_name}] Starting worker process (PID: #{Process.pid})"
+      worker = Worker.new(name: worker_name, slot_configs: slot_configs, db_config: db_config)
+      worker.run
+    end
+
+    def run_forked_workers(workers_slots)
       Wal.fork_hooks[:before_fork]&.call
 
       workers_slots.each do |worker_name, slot_configs|
