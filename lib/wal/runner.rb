@@ -79,17 +79,16 @@ module Wal
       end
     end
 
-    attr_reader :config_file, :db_config
+    attr_reader :config, :db_config
 
-    def initialize(config_file:, db_config:)
-      @config_file = config_file
+    def initialize(config:, db_config:)
+      @config = config
       @db_config = db_config
       @child_pids = []
     end
 
     def start
-      slots = YAML.load_file(config_file)["slots"]
-      workers_slots = slots.group_by { |_slot, config| config["worker"] || "default" }
+      workers_slots = config["slots"].group_by { |_slot, slot_config| slot_config["worker"] || "default" }
 
       if workers_slots.size == 1
         run_single_worker(workers_slots.first)

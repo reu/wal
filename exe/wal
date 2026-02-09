@@ -7,7 +7,7 @@ begin
     Usage:
       wal watch --watcher <watcher-class>
         (--slot <replication-slot> | --tmp-slot)
-        [--publication=<publication>...]
+        --publication <publication>...
         [--replicator <replicator-class>]
       wal start <config-file>
 
@@ -16,7 +16,7 @@ begin
       --watcher=<watcher-class>          The watcher class to be used to listen for WAL changes.
       --slot=<replication-slot>          The replication slot that will be used.
       --tmp-slot                         Use a temporary replication slot.
-      [--publication=<publication>...]   Force using the informed Postgres publications.
+      [--publication=<publication>...]   Postgres publications to subscribe to.
       [--replicator=<replicatior_class>] Change the replication driver class
   DOCOPT
 rescue Docopt::Exit => err
@@ -28,24 +28,18 @@ require "./config/environment"
 
 db_config = ActiveRecord::Base.configurations.configs_for(name: "primary").configuration_hash
 
-def watch(db_config, cli)
-  watcher = cli["--watcher"].constantize.new
-  use_temporary_slot = cli["--tmp-slot"] || false
-  replication_slot = cli["--slot"]
-  replication_slot = replication_slot.presence || "wal_watcher_#{SecureRandom.alphanumeric(4)}" if use_temporary_slot
-  publications = cli["--publication"] || []
-  replicator_class = cli["--replicator"].presence&.constantize || Wal::Replicator
-
-  puts "Watcher started for #{replication_slot} slot (#{publications.join(", ")})"
-  replicator_class
-    .new(replication_slot:, use_temporary_slot:, db_config:)
-    .replicate_forever(Wal::LoggingWatcher.new(replication_slot, watcher), publications:)
-  puts "Watcher finished for #{replication_slot}"
-end
-
 if cli["watch"]
-  watch(db_config, cli)
+  config = {
+    "watcher" => cli["--watcher"],
+    "temporary" => cli["--tmp-slot"],
+    "publications" => cli["--publication"] || [],
+    "replicator" => cli["--replicator"],
+  }
+  slot = cli["--slot"].presence || "wal_watcher_#{SecureRandom.alphanumeric(4)}"
+  runner = Wal::Runner.new(config: { "slots" => { slot => config } }, db_config:)
+  runner.start
 elsif cli["start"]
-  runner = Wal::Runner.new(config_file: cli["<config-file>"], db_config:)
+  config = YAML.load_file(cli["<config-file>"])
+  runner = Wal::Runner.new(config:, db_config:)
   runner.start
 end
