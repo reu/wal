@@ -13,11 +13,20 @@ module Wal
     sig { returns(T.class_of(Logger)) }
     attr_accessor :logger
 
-    sig { params(block: T.proc.void).void }
+    sig { params(block: T.proc.params(worker_name: T.untyped).void).void }
     def before_fork(&block); end
 
-    sig { params(block: T.proc.void).void }
+    sig { params(block: T.proc.params(worker_name: String, slot_configs: T.untyped).void).void }
     def after_fork(&block); end
+
+    sig { params(block: T.proc.params(slot: String, config: T.untyped).void).void }
+    def on_slot_start(&block); end
+
+    sig { params(block: T.proc.params(error: StandardError, slot: String, config: T.untyped).void).void }
+    def on_slot_error(&block); end
+
+    sig { params(block: T.proc.params(slot: String, config: T.untyped).void).void }
+    def on_slot_finish(&block); end
   end
 
   sig { params(block: T.proc.params(config: T.class_of(Wal)).void).void }

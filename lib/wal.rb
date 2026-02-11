@@ -16,22 +16,30 @@ require_relative "wal/version"
 module Wal
   class << self
     attr_accessor :logger
-    attr_accessor :fork_hooks
+    attr_accessor :hooks
 
     def logger
       @logger ||= Logger.new($stdout, level: :info)
     end
 
-    def fork_hooks
-      @fork_hooks ||= {}
+    def hooks
+      @hooks ||= {}
+    end
+
+    def on_slot_finished(&block)
+      hooks[:on_slot_finished] = block
+    end
+
+    def on_slot_error(&block)
+      hooks[:on_slot_error] = block
     end
 
     def before_fork(&block)
-      fork_hooks[:before_fork] = block
+      hooks[:before_fork] = block
     end
 
     def after_fork(&block)
-      fork_hooks[:after_fork] = block
+      hooks[:after_fork] = block
     end
   end
 

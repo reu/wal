@@ -32,30 +32,38 @@ module Wal
         Thread.new(slot, watcher, temporary, publications) do |replication_slot, watcher, use_temporary_slot, publications|
           retries = 0
           replication_slot = "#{replication_slot}_#{SecureRandom.alphanumeric(4)}" if use_temporary_slot
-          puts "Watcher started for #{replication_slot} slot (#{publications.join(", ")})"
+          puts "[#{replication_slot}] Watcher started for #{replication_slot} slot (#{publications.join(", ")})"
 
           begin
+            Wal.hooks[:on_slot_start]&.call(slot, config)
+
             replicator_class
               .new(db_config:, **replicator_params, replication_slot:, use_temporary_slot:)
               .replicate_forever(Wal::LoggingWatcher.new(replication_slot, watcher), publications:)
+
+            Wal.hooks[:on_slot_finish]&.call(slot, config)
+
             if auto_restart
               backoff_time = backoff_exponent ? (backoff * retries) ** backoff_exponent : backoff
-              puts "Watcher finished for #{replication_slot}, auto restarting in #{backoff_time.floor(2)}..."
+              puts "[#{replication_slot}] Watcher finished for #{replication_slot}, auto restarting in #{backoff_time.floor(2)}..."
               sleep backoff_time
-              puts "Restarting #{replication_slot}"
+              puts "[#{replication_slot}] Restarting"
               redo
             end
           rescue ArgumentError
             raise
           rescue StandardError => err
+            Wal.hooks[:on_slot_error]&.call(err, slot, config)
+
+            Wal.logger&.error("[#{replication_slot}] Error #{err}")
+            Wal.logger&.error([err.message, *err.backtrace].join("\n"))
+
             if retries < max_retries
-              Wal.logger&.error("[#{replication_slot}] Error #{err}")
-              Wal.logger&.error([err.message, *err.backtrace].join("\n"))
               retries += 1
               backoff_time = backoff_exponent ? (backoff * retries) ** backoff_exponent : backoff
-              puts "Restarting #{replication_slot} in #{backoff_time.floor(2)}s..."
+              puts "#{replication_slot}] Restarting #{replication_slot} in #{backoff_time.floor(2)}s..."
               sleep backoff_time
-              puts "Restarting #{replication_slot}"
+              puts "#{replication_slot}] Restarting #{replication_slot}"
               retry
             end
             raise
@@ -105,12 +113,12 @@ module Wal
     end
 
     def run_forked_workers(workers_slots)
-      Wal.fork_hooks[:before_fork]&.call
+      Wal.hooks[:before_fork]&.call(workers_slots)
 
       workers_slots.each do |worker_name, slot_configs|
         pid = fork_worker(worker_name, slot_configs)
         @child_pids << pid
-        puts "Spawned worker '#{worker_name}' with PID #{pid}"
+        puts "[#{worker_name}] Spawned worker '#{worker_name}' with PID #{pid}"
       end
 
       @ping_thread = start_ping_thread
@@ -122,7 +130,7 @@ module Wal
 
     def fork_worker(worker_name, slot_configs)
       Process.fork do
-        Wal.fork_hooks[:after_fork]&.call
+        Wal.hooks[:after_fork]&.call(worker_name, slot_configs)
         puts "[#{worker_name}] Starting worker process (PID: #{Process.pid})"
         worker = Worker.new(name: worker_name, slot_configs: slot_configs, db_config: db_config)
         worker.run
