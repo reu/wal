@@ -20,17 +20,18 @@ module Wal
     def on_event(event)
       case event
       when Wal::BeginTransactionEvent
-        @start = Time.now
+        @start = Process.clock_gettime(Process::CLOCK_MONOTONIC)
         @count = 0
-        if event.estimated_size > 0
-          Wal.logger&.debug("[#{@slot}] Begin transaction=#{event.transaction_id} size=#{event.estimated_size}")
-        end
+        Wal.logger&.debug("[#{@slot}] Begin transaction=#{event.transaction_id} size=#{event.estimated_size}")
       when Wal::CommitTransactionEvent
-        if @count > 0
-          elapsed = ((Time.now - @start) * 1000.0).round(1)
-          actions = " actions=#{@actions.sort.join(",")}" unless @actions.empty?
-          tables = " tables=#{@tables.sort.join(",")}" unless @tables.empty?
-          Wal.logger&.info("[#{@slot}] Commit transaction=#{event.transaction_id} elapsed=#{elapsed} events=#{@count}#{actions}#{tables}")
+        elapsed = ((Process.clock_gettime(Process::CLOCK_MONOTONIC) - @start) * 1000).round(3)
+        message = "[#{@slot}] Commit transaction=#{event.transaction_id} elapsed=#{elapsed} events=#{@count}"
+        message << " actions=#{@actions.sort.join(",")}" unless @actions.empty?
+        message << " tables=#{@tables.sort.join(",")}" unless @tables.empty?
+        if @count > 1
+          Wal.logger&.info(message)
+        else
+          Wal.logger&.debug(message)
         end
         @actions.clear
         @tables.clear
@@ -40,7 +41,11 @@ module Wal
         @actions << :insert
         @tables << event.table
       when Wal::UpdateEvent
-        Wal.logger&.debug("[#{@slot}] Update transaction=#{event.transaction_id} table=#{event.table} primary_key=#{event.primary_key}")
+        if Wal.logger&.level >= Logger::DEBUG
+          message = "[#{@slot}] Update transaction=#{event.transaction_id} table=#{event.table} primary_key=#{event.primary_key}"
+          message << " changed=#{event.diff.keys.join(",")}" if event.diff && !event.diff.empty?
+          Wal.logger&.debug(message)
+        end
         @count += 1
         @actions << :update
         @tables << event.table
