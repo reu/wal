@@ -32,33 +32,45 @@ module Wal
     def on_event(event)
       case event
       when BeginTransactionEvent
-        @queue = SizedQueue.new(queue_size(event))
-
+        @event_queue = SizedQueue.new(queue_size(event))
         event_stream = Enumerator.new do |y|
-          while (item = @queue.pop)
-            case item
-            when CommitTransactionEvent
-              y << item
-              break
-            else
-              y << item
-            end
+          while (item = @event_queue.pop)
+            y << item
+            break if item.is_a?(CommitTransactionEvent)
           end
         end
-        @worker = Thread.new { on_transaction_events(event_stream) }
-
-        @queue << event
+        ensure_worker
+        @transaction_queue << event_stream
+        @event_queue << event
 
       when CommitTransactionEvent
-        @queue << event
-        @worker.join
-
-        # We are cleaning this up to hint to Ruby GC that this can be freed before the next begin transaction arrives
-        @queue.clear
-        @queue = nil
+        @event_queue << event
+        result = @completion_queue.pop
+        @event_queue.clear
+        raise result if result.is_a? Exception
 
       else
-        @queue << event
+        @event_queue << event
+      end
+    end
+
+    private
+
+    def ensure_worker
+      return if @worker&.alive?
+
+      @transaction_queue = Queue.new
+      @completion_queue = Queue.new
+
+      @worker = Thread.new do
+        while (event_stream = @transaction_queue.pop)
+          begin
+            on_transaction_events(event_stream)
+            @completion_queue << :done
+          rescue Exception => e
+            @completion_queue << e
+          end
+        end
       end
     end
   end
