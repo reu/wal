@@ -26,8 +26,12 @@ module Wal
       @hooks ||= {}
     end
 
-    def on_slot_finished(&block)
-      hooks[:on_slot_finished] = block
+    def on_slot_start(&block)
+      hooks[:on_slot_start] = block
+    end
+
+    def on_slot_finish(&block)
+      hooks[:on_slot_finish] = block
     end
 
     def on_slot_error(&block)
