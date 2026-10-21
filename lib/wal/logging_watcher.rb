@@ -22,19 +22,13 @@ module Wal
       when Wal::BeginTransactionEvent
         @start = Process.clock_gettime(Process::CLOCK_MONOTONIC)
         @count = 0
-        Wal.logger&.debug("[#{@slot}] Begin transaction=#{event.transaction_id} size=#{event.estimated_size}")
-      when Wal::CommitTransactionEvent
-        elapsed = ((Process.clock_gettime(Process::CLOCK_MONOTONIC) - @start) * 1000).round(3)
-        message = "[#{@slot}] Commit transaction=#{event.transaction_id} elapsed=#{elapsed} events=#{@count}"
-        message << " actions=#{@actions.sort.join(",")}" unless @actions.empty?
-        message << " tables=#{@tables.sort.join(",")}" unless @tables.empty?
-        if @count > 1
-          Wal.logger&.info(message)
-        else
-          Wal.logger&.debug(message)
-        end
         @actions.clear
         @tables.clear
+        Wal.logger&.debug("[#{@slot}] Begin transaction=#{event.transaction_id} size=#{event.estimated_size}")
+        @transaction_open = true
+        Wal.hooks[:on_transaction_start]&.call(event, @slot, @watcher)
+      when Wal::CommitTransactionEvent
+        # Logged after the watcher handles it, so the elapsed time covers its commit processing
       when Wal::InsertEvent
         Wal.logger&.debug("[#{@slot}] Insert transaction=#{event.transaction_id} table=#{event.table} primary_key=#{event.primary_key}")
         @count += 1
@@ -57,7 +51,38 @@ module Wal
       else
         @count += 1
       end
+
       @watcher.on_event(event)
+
+      if event.is_a?(Wal::CommitTransactionEvent)
+        log_commit(event)
+        finish_transaction(event)
+      end
+    rescue Exception
+      # The commit will never arrive for this transaction, but the finish hook still has to pair with the start one
+      finish_transaction(nil)
+      raise
+    end
+
+    private
+
+    def log_commit(event)
+      elapsed = ((Process.clock_gettime(Process::CLOCK_MONOTONIC) - @start) * 1000).round(3)
+      message = "[#{@slot}] Commit transaction=#{event.transaction_id} elapsed=#{elapsed} events=#{@count}"
+      message << " actions=#{@actions.sort.join(",")}" unless @actions.empty?
+      message << " tables=#{@tables.sort.join(",")}" unless @tables.empty?
+      if @count > 1
+        Wal.logger&.info(message)
+      else
+        Wal.logger&.debug(message)
+      end
+    end
+
+    def finish_transaction(event)
+      return unless @transaction_open
+
+      @transaction_open = false
+      Wal.hooks[:on_transaction_finish]&.call(event, @slot, @watcher)
     end
   end
 end
