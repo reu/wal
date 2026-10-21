@@ -38,6 +38,17 @@ module Wal
       hooks[:on_slot_error] = block
     end
 
+    # Called before the watcher receives each `BeginTransactionEvent`.
+    def on_transaction_start(&block)
+      hooks[:on_transaction_start] = block
+    end
+
+    # Called after the watcher handles each `CommitTransactionEvent`, so every bit of the transaction processing runs
+    # between the start and finish hooks. When processing raises mid-transaction it is still called, with a `nil` event.
+    def on_transaction_finish(&block)
+      hooks[:on_transaction_finish] = block
+    end
+
     def before_fork(&block)
       hooks[:before_fork] = block
     end
