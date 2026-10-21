@@ -1,7 +1,6 @@
 require "testcontainers/postgres"
 require "debug"
 require "minitest"
-require "minitest/mock"
 require "wal"
 
 RSpec.configure do |config|

@@ -150,10 +150,10 @@ RSpec.describe Wal::RecordWatcher do
       end
 
       it "supports on insert events via DSL" do
-        mock = Minitest::Mock.new
+        events = []
 
         watcher = Class.new(Wal::RecordWatcher) do
-          on_insert(Record) { |event| mock.on_save(event) }
+          on_insert(Record) { |event| events << event }
 
           define_method(:aggregation_strategy) do |_|
             aggregation_strategy
@@ -166,22 +166,20 @@ RSpec.describe Wal::RecordWatcher do
           Record.create!(name: "Record")
         end
 
-        mock.expect(:on_save, true) do |event|
-          event.is_a?(Wal::InsertEvent) && event.primary_key == record.id
-        end
-
         replicate_single_transaction(replication)
 
-        assert mock.verify
+        assert_equal 1, events.size
+        assert_instance_of Wal::InsertEvent, events[0]
+        assert_equal record.id, events[0].primary_key
       ensure
         record&.delete
       end
 
       it "supports on update events via DSL" do
-        mock = Minitest::Mock.new
+        events = []
 
         watcher = Class.new(Wal::RecordWatcher) do
-          on_update(Record, changed: [:name]) { |event| mock.on_save(event) }
+          on_update(Record, changed: [:name]) { |event| events << event }
 
           define_method(:aggregation_strategy) do |_|
             aggregation_strategy
@@ -197,22 +195,20 @@ RSpec.describe Wal::RecordWatcher do
           record.save!
         end
 
-        mock.expect(:on_save, true) do |event|
-          event.is_a?(Wal::UpdateEvent) && event.primary_key == record.id
-        end
-
         replicate_single_transaction(replication)
 
-        assert mock.verify
+        assert_equal 1, events.size
+        assert_instance_of Wal::UpdateEvent, events[0]
+        assert_equal record.id, events[0].primary_key
       ensure
         record&.delete
       end
 
       it "supports on delete events via DSL" do
-        mock = Minitest::Mock.new
+        events = []
 
         watcher = Class.new(Wal::RecordWatcher) do
-          on_delete(Record) { |event| mock.on_delete(event) }
+          on_delete(Record) { |event| events << event }
 
           define_method(:aggregation_strategy) do |_|
             aggregation_strategy
@@ -227,13 +223,11 @@ RSpec.describe Wal::RecordWatcher do
           record.destroy!
         end
 
-        mock.expect(:on_delete, true) do |event|
-          event.is_a?(Wal::DeleteEvent) && event.primary_key == record.id
-        end
-
         replicate_single_transaction(replication)
 
-        assert mock.verify
+        assert_equal 1, events.size
+        assert_instance_of Wal::DeleteEvent, events[0]
+        assert_equal record.id, events[0].primary_key
       ensure
         record&.delete
       end
